@@ -55,3 +55,21 @@ create policy "Allow public read scratch_counts"
   for select
   to anon, authenticated
   using (true);
+
+create table if not exists public.scratch_settings (
+  id integer primary key default 1 check (id = 1),
+  target integer not null default 20,
+  complete boolean not null default false
+);
+
+insert into public.scratch_settings (id, target, complete)
+values (1, 20, false)
+on conflict (id) do nothing;
+
+alter table public.scratch_settings enable row level security;
+
+create policy "Allow public read scratch_settings"
+  on public.scratch_settings
+  for select
+  to anon, authenticated
+  using (true);

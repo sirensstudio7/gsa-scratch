@@ -45,6 +45,7 @@ export async function POST(request: Request) {
 
   await supabase.from("scratch_claims").delete().neq("client_id", "");
   await supabase.from("scratch_counts").update({ count: 0 }).neq("asset", "");
+  await supabase.from("scratch_settings").update({ complete: false }).eq("id", 1);
   clearMemoryScratchProgress();
 
   return NextResponse.json({ success: true });

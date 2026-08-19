@@ -67,19 +67,20 @@ export function emptyCounts(): ScratchCounts {
 
 export function toProgressPayload(counts: ScratchCounts): ScratchProgress {
   const target = getRevealTarget();
+  const complete = getForceComplete();
   const progress = {
-    hat: Math.min(1, counts.hat / target),
-    pencil: Math.min(1, counts.pencil / target),
-    ribbon: Math.min(1, counts.ribbon / target),
+    hat: complete ? 1 : Math.min(1, counts.hat / target),
+    pencil: complete ? 1 : Math.min(1, counts.pencil / target),
+    ribbon: complete ? 1 : Math.min(1, counts.ribbon / target),
   };
   return {
     counts,
     target,
     progress,
     fullyRevealed:
-      getForceComplete() ||
+      complete ||
       (progress.hat >= 1 && progress.pencil >= 1 && progress.ribbon >= 1),
-    complete: getForceComplete(),
+    complete,
   };
 }
 

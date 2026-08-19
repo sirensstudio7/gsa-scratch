@@ -3,8 +3,11 @@ import { cookies } from "next/headers";
 import {
   claimMemoryScratch,
   emptyCounts,
+  getForceComplete,
   getMemoryScratchProgress,
+  getRevealTarget,
   isScratchId,
+  SCRATCH_IDS,
   setForceComplete,
   setRevealTarget,
   toProgressPayload,
@@ -36,6 +39,63 @@ async function readSupabaseCounts(): Promise<ScratchCounts> {
   return counts;
 }
 
+async function readSupabaseSettings() {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("scratch_settings")
+    .select("target, complete")
+    .eq("id", 1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const target = Number(data.target);
+  return {
+    target: Number.isFinite(target) && target > 0 ? Math.floor(target) : 20,
+    complete: data.complete === true,
+  };
+}
+
+async function writeSupabaseSettings(patch: {
+  target?: number;
+  complete?: boolean;
+}) {
+  const current = (await readSupabaseSettings()) ?? {
+    target: getRevealTarget(),
+    complete: getForceComplete(),
+  };
+  const next = {
+    id: 1,
+    target: patch.target ?? current.target,
+    complete: patch.complete ?? current.complete,
+  };
+  const { error } = await getSupabaseAdmin()
+    .from("scratch_settings")
+    .upsert(next);
+  if (error) throw error;
+  setRevealTarget(next.target);
+  setForceComplete(next.complete);
+  return next;
+}
+
+async function fillSupabaseAssets(target: number) {
+  const supabase = getSupabaseAdmin();
+  const counts = await readSupabaseCounts();
+  for (const asset of SCRATCH_IDS) {
+    const next = Math.max(counts[asset], target);
+    const { error } = await supabase.from("scratch_counts").upsert({
+      asset,
+      count: next,
+    });
+    if (error) throw error;
+  }
+}
+
+function applySettings(settings: { target: number; complete: boolean } | null) {
+  if (!settings) return;
+  setRevealTarget(settings.target);
+  setForceComplete(settings.complete);
+}
+
 export async function GET() {
   try {
     if (isMemoryMode()) {
@@ -46,7 +106,11 @@ export async function GET() {
     }
 
     try {
-      const counts = await readSupabaseCounts();
+      const [counts, settings] = await Promise.all([
+        readSupabaseCounts(),
+        readSupabaseSettings(),
+      ]);
+      applySettings(settings);
       return NextResponse.json({
         ...toProgressPayload(counts),
         mode: "supabase",
@@ -74,6 +138,20 @@ export async function PATCH(request: Request) {
 
   if (body?.complete === true) {
     setForceComplete(true);
+    if (!isMemoryMode()) {
+      try {
+        await writeSupabaseSettings({ complete: true });
+        await fillSupabaseAssets(getRevealTarget());
+        const counts = await readSupabaseCounts();
+        return NextResponse.json({
+          success: true,
+          ...toProgressPayload(counts),
+          mode: "supabase",
+        });
+      } catch (err) {
+        console.error("scratch PATCH complete supabase fallback", err);
+      }
+    }
     return NextResponse.json({
       success: true,
       ...getMemoryScratchProgress(),
@@ -82,6 +160,13 @@ export async function PATCH(request: Request) {
 
   if (body?.complete === false) {
     setForceComplete(false);
+    if (!isMemoryMode()) {
+      try {
+        await writeSupabaseSettings({ complete: false });
+      } catch (err) {
+        console.error("scratch PATCH incomplete supabase fallback", err);
+      }
+    }
     return NextResponse.json({
       success: true,
       ...getMemoryScratchProgress(),
@@ -97,6 +182,13 @@ export async function PATCH(request: Request) {
   }
 
   const target = setRevealTarget(raw);
+  if (!isMemoryMode()) {
+    try {
+      await writeSupabaseSettings({ target });
+    } catch (err) {
+      console.error("scratch PATCH target supabase fallback", err);
+    }
+  }
   return NextResponse.json({
     success: true,
     ...getMemoryScratchProgress(),
@@ -138,7 +230,11 @@ export async function POST(request: Request) {
 
       if (claimErr) {
         if (claimErr.code === "23505") {
-          const counts = await readSupabaseCounts();
+          const [counts, settings] = await Promise.all([
+            readSupabaseCounts(),
+            readSupabaseSettings(),
+          ]);
+          applySettings(settings);
           return NextResponse.json({
             success: true,
             accepted: false,
@@ -163,6 +259,8 @@ export async function POST(request: Request) {
       if (upsertErr) throw upsertErr;
 
       const counts = await readSupabaseCounts();
+      const settings = await readSupabaseSettings();
+      applySettings(settings);
       return NextResponse.json({
         success: true,
         accepted: true,

@@ -414,7 +414,7 @@ export default function WallPage() {
   }, [mergeParticipant, pushToast]);
 
   return (
-    <StageShell showTeamMark={false}>
+    <StageShell showTeamMark={showSuccess}>
       <div className="relative z-0 flex min-h-0 flex-1 items-center justify-center px-10 pb-8 pt-4">
         <div
           className={`wall-scratch-stage relative flex w-full max-w-7xl items-center justify-center transition-opacity duration-700 ${
