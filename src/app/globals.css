@@ -23,7 +23,7 @@ body {
 
 body {
   color: var(--ink);
-  font-family: "Product Sans", "Google Sans", "Segoe UI", system-ui, sans-serif;
+  font-family: "Google Sans", "Segoe UI", system-ui, sans-serif;
   background: #f7fbfe;
   -webkit-font-smoothing: antialiased;
 }
@@ -88,6 +88,15 @@ input {
 
 .success-fade {
   animation: success-fade-up 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.font-google-sans {
+  font-family: "Google Sans", "Segoe UI", system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+.font-google-sans .font-black {
+  font-weight: 700;
 }
 
 /* Wall success brand line — shine clipped to letter shapes (no box) */
@@ -274,8 +283,8 @@ input {
   position: absolute;
   inset: 0;
   /* Shine only on logo pixels — no square container */
-  -webkit-mask-image: url(/assets/tg-logo-hero.png);
-  mask-image: url(/assets/tg-logo-hero.png);
+  -webkit-mask-image: url(/assets/tg-logo-hero-v2.png);
+  mask-image: url(/assets/tg-logo-hero-v2.png);
   -webkit-mask-size: contain;
   mask-size: contain;
   -webkit-mask-repeat: no-repeat;
@@ -309,6 +318,13 @@ input {
   width: min(36vw, 380px);
   max-width: 380px;
   aspect-ratio: 1 / 1;
+}
+
+.wall-scratch-item--hero {
+  width: min(92vw, 980px);
+  max-width: 980px;
+  aspect-ratio: 1024 / 619;
+  background: transparent;
 }
 
 .hero-cluster {

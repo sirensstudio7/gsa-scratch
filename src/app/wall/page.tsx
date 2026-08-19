@@ -9,23 +9,17 @@ import {
   type CSSProperties,
 } from "react";
 import { StageShell } from "@/components/StageShell";
-import { WallRevealAsset } from "@/components/WallRevealAsset";
+import { WallHeroProgress } from "@/components/WallHeroProgress";
 import { WallSuccessOverlay } from "@/components/WallSuccessOverlay";
-import { SCRATCH_OBJECTS, type Participant, type ScratchId } from "@/lib/types";
+import { type Participant } from "@/lib/types";
 import { isSupabaseConfigured, getSupabaseBrowser } from "@/lib/supabase";
-
-const WALL_ASSETS = SCRATCH_OBJECTS.map((obj) => ({
-  id: obj.id as ScratchId,
-  colorSrc: obj.colorSrc,
-  whiteSrc: obj.maskSrc.replace("-white.png", "-white-clear.png"),
-  alt: obj.label,
-}));
 
 const WALL_NAME_ACCENTS = ["#4285f4", "#ea4335", "#fbbc05", "#34a853"] as const;
 const TOAST_VISIBLE_MS = 5000;
 const TOAST_EXIT_MS = 480;
-const FILL_DURATION_MS = 700;
+const FILL_DURATION_MS = 1400;
 const SCRATCH_SOUND_SRC = "/sounds/paper-scratch.mp3";
+const POP_SOUND_SRC = "/sounds/name-pop.mp3";
 const SOUND_FLAG_KEY = "gsa_wall_scratch_sound";
 
 type WallToast = Participant & {
@@ -44,6 +38,7 @@ export default function WallPage() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [toasts, setToasts] = useState<WallToast[]>([]);
   const [target, setTarget] = useState(20);
+  const [forceComplete, setForceComplete] = useState(false);
   const [displayProgress, setDisplayProgress] = useState(0);
   const seenIds = useRef(new Set<string>());
   const accentTick = useRef(0);
@@ -54,14 +49,16 @@ export default function WallPage() {
   const [showSuccess, setShowSuccess] = useState(false);
   const didHydrateSnap = useRef(false);
   const scratchAudio = useRef<HTMLAudioElement | null>(null);
+  const popAudio = useRef<HTMLAudioElement | null>(null);
   const soundEnabledRef = useRef(false);
   const audioUnlockedRef = useRef(false);
 
-  /** Wall reveal = submitted students / staff target */
+  /** Wall reveal = submitted students / staff target, or staff force-complete */
   const revealProgress = useMemo(() => {
+    if (forceComplete) return 1;
     if (target <= 0) return 0;
     return Math.min(1, participants.length / target);
-  }, [participants.length, target]);
+  }, [forceComplete, participants.length, target]);
 
   useEffect(() => {
     const audio = new Audio(SCRATCH_SOUND_SRC);
@@ -69,6 +66,12 @@ export default function WallPage() {
     audio.volume = 1;
     scratchAudio.current = audio;
     audio.load();
+
+    const pop = new Audio(POP_SOUND_SRC);
+    pop.preload = "auto";
+    pop.volume = 0.9;
+    popAudio.current = pop;
+    pop.load();
 
     const readFlag = () => {
       try {
@@ -96,33 +99,72 @@ export default function WallPage() {
 
     const unlock = () => {
       if (audioUnlockedRef.current) return;
-      const a = scratchAudio.current;
-      if (!a) return;
-      const prev = a.volume;
-      a.volume = 0;
-      void a
-        .play()
-        .then(() => {
-          a.pause();
-          a.currentTime = 0;
-          a.volume = prev;
-          audioUnlockedRef.current = true;
-        })
-        .catch(() => {
-          a.volume = prev;
-        });
+      const unlockOne = (a: HTMLAudioElement | null) => {
+        if (!a) return Promise.resolve();
+        const prev = a.volume;
+        a.volume = 0;
+        return a
+          .play()
+          .then(() => {
+            a.pause();
+            a.currentTime = 0;
+            a.volume = prev;
+          })
+          .catch(() => {
+            a.volume = prev;
+          });
+      };
+      void Promise.all([
+        unlockOne(scratchAudio.current),
+        unlockOne(popAudio.current),
+      ]).then(() => {
+        audioUnlockedRef.current = true;
+      });
     };
     window.addEventListener("pointerdown", unlock);
     window.addEventListener("keydown", unlock);
 
     return () => {
       audio.pause();
+      pop.pause();
       scratchAudio.current = null;
+      popAudio.current = null;
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("pointerdown", unlock);
       window.removeEventListener("keydown", unlock);
       channel?.close();
     };
+  }, []);
+
+  const playPopSound = useCallback(() => {
+    const play = (el: HTMLAudioElement) => {
+      try {
+        el.pause();
+        el.currentTime = 0;
+      } catch {
+        /* ignore */
+      }
+      void el.play().catch(() => {
+        audioUnlockedRef.current = false;
+      });
+    };
+    const existing = popAudio.current;
+    if (existing && !existing.paused && existing.currentTime > 0) {
+      const clone = existing.cloneNode(true) as HTMLAudioElement;
+      clone.volume = 0.9;
+      void clone.play().catch(() => {
+        /* ignore */
+      });
+      return;
+    }
+    if (existing) {
+      play(existing);
+      return;
+    }
+    const fresh = new Audio(POP_SOUND_SRC);
+    fresh.volume = 0.9;
+    popAudio.current = fresh;
+    play(fresh);
   }, []);
 
   const playScratchSound = useCallback(() => {
@@ -209,6 +251,7 @@ export default function WallPage() {
     accentTick.current += 1;
 
     setToasts((prev) => [...prev, { ...p, accent }]);
+    playPopSound();
 
     const leaveTimer = setTimeout(() => {
       setToasts((prev) =>
@@ -222,7 +265,7 @@ export default function WallPage() {
     }, TOAST_VISIBLE_MS);
 
     timers.current.set(p.id, [leaveTimer, removeTimer]);
-  }, []);
+  }, [playPopSound]);
 
   const mergeParticipant = useCallback(
     (p: Participant) => {
@@ -257,6 +300,7 @@ export default function WallPage() {
       if (typeof scratch.target === "number" && scratch.target > 0) {
         setTarget(scratch.target);
       }
+      setForceComplete(scratch.complete === true);
       setHydrated(true);
 
       pollTimer = setInterval(async () => {
@@ -275,6 +319,7 @@ export default function WallPage() {
           if (typeof dScratch.target === "number" && dScratch.target > 0) {
             setTarget(dScratch.target);
           }
+          setForceComplete(dScratch.complete === true);
         } catch {
           /* ignore */
         }
@@ -318,35 +363,13 @@ export default function WallPage() {
 
   return (
     <StageShell>
-      {!showSuccess ? (
-        <div className="absolute left-4 top-2 z-30 rounded-2xl bg-white/80 px-5 py-3 shadow-lg backdrop-blur sm:left-6 sm:top-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-[#5f6368]">
-            Google Student Ambasador 2026
-          </p>
-          <p className="text-3xl font-black text-[#1a73e8]">
-            {participants.length}
-            <span className="ml-2 text-base font-semibold text-[#3c4043]">
-              / {target} participants
-            </span>
-          </p>
-        </div>
-      ) : null}
-
       <div className="relative z-0 flex min-h-0 flex-1 items-center justify-center px-10 pb-8 pt-4">
         <div
-          className={`wall-scratch-stage grid w-full max-w-7xl grid-cols-3 items-center justify-items-center gap-6 transition-opacity duration-700 ${
+          className={`wall-scratch-stage flex w-full max-w-7xl items-center justify-center transition-opacity duration-700 ${
             showSuccess ? "pointer-events-none opacity-0" : "opacity-100"
           }`}
         >
-          {WALL_ASSETS.map((asset) => (
-            <WallRevealAsset
-              key={asset.id}
-              colorSrc={asset.colorSrc}
-              whiteSrc={asset.whiteSrc}
-              alt={asset.alt}
-              progress={displayProgress}
-            />
-          ))}
+          <WallHeroProgress progress={displayProgress} />
         </div>
       </div>
 
@@ -380,7 +403,7 @@ export default function WallPage() {
       </div>
 
       {showSuccess ? (
-        <WallSuccessOverlay participantCount={participants.length} />
+        <WallSuccessOverlay />
       ) : null}
     </StageShell>
   );

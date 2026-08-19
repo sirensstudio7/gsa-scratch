@@ -185,33 +185,36 @@ export default function PlayPage() {
             </p>
           )}
           <div className="flex flex-col items-center gap-5 py-1">
-            {SCRATCH_OBJECTS.map((obj) => (
-              <ScratchCard
-                key={`m-${obj.id}`}
-                colorSrc={obj.colorSrc}
-                maskSrc={obj.maskSrc}
-                label={obj.label}
-                completed={scratches[obj.id]}
-                onComplete={() => markDone(obj.id)}
-                enabled={formReady}
-                className="scratch-item scratch-item-mobile"
-              />
-            ))}
+            {(["pencil", "hat", "ribbon"] as const).map((id) => {
+              const obj = SCRATCH_OBJECTS.find((o) => o.id === id)!;
+              return (
+                <ScratchCard
+                  key={`m-${obj.id}`}
+                  colorSrc={obj.colorSrc}
+                  maskSrc={obj.maskSrc}
+                  label={obj.label}
+                  completed={scratches[obj.id]}
+                  onComplete={() => markDone(obj.id)}
+                  enabled={formReady}
+                  className="scratch-item scratch-item-mobile"
+                />
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* Desktop: title above hat, form above pencil */}
+      {/* Desktop: title left, form center — pencil / hat / ribbon */}
       <div className="hidden min-h-0 flex-1 flex-col px-10 pb-28 pt-2 md:flex">
         <div className="scratch-stage mx-auto grid w-full max-w-7xl flex-1 grid-cols-3 items-end gap-6">
           <div className="hat-col flex flex-col items-center justify-end gap-3 pb-2">
             {renderTitle()}
             <ScratchCard
-              colorSrc={SCRATCH_OBJECTS[0].colorSrc}
-              maskSrc={SCRATCH_OBJECTS[0].maskSrc}
-              label={SCRATCH_OBJECTS[0].label}
-              completed={scratches.hat}
-              onComplete={() => markDone("hat")}
+              colorSrc={SCRATCH_OBJECTS[1].colorSrc}
+              maskSrc={SCRATCH_OBJECTS[1].maskSrc}
+              label={SCRATCH_OBJECTS[1].label}
+              completed={scratches.pencil}
+              onComplete={() => markDone("pencil")}
               enabled={formReady}
               className="scratch-item"
             />
@@ -220,11 +223,11 @@ export default function PlayPage() {
           <div className="pencil-col flex flex-col items-center justify-end gap-4">
             {renderForm("max-w-[260px]")}
             <ScratchCard
-              colorSrc={SCRATCH_OBJECTS[1].colorSrc}
-              maskSrc={SCRATCH_OBJECTS[1].maskSrc}
-              label={SCRATCH_OBJECTS[1].label}
-              completed={scratches.pencil}
-              onComplete={() => markDone("pencil")}
+              colorSrc={SCRATCH_OBJECTS[0].colorSrc}
+              maskSrc={SCRATCH_OBJECTS[0].maskSrc}
+              label={SCRATCH_OBJECTS[0].label}
+              completed={scratches.hat}
+              onComplete={() => markDone("hat")}
               enabled={formReady}
               className="scratch-item"
             />

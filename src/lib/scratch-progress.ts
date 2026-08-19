@@ -9,12 +9,14 @@ export type ScratchProgress = {
   target: number;
   progress: Record<ScratchId, number>;
   fullyRevealed: boolean;
+  complete: boolean;
 };
 
 type GlobalScratch = {
   __gsaScratchCounts?: ScratchCounts;
   __gsaScratchClaims?: Set<string>;
   __gsaRevealTarget?: number;
+  __gsaForceComplete?: boolean;
 };
 
 function scratchStore() {
@@ -47,6 +49,18 @@ export function setRevealTarget(n: number) {
   return next;
 }
 
+export function getForceComplete() {
+  return Boolean(
+    (globalThis as typeof globalThis & GlobalScratch).__gsaForceComplete,
+  );
+}
+
+export function setForceComplete(value: boolean) {
+  const g = globalThis as typeof globalThis & GlobalScratch;
+  g.__gsaForceComplete = value;
+  return g.__gsaForceComplete;
+}
+
 export function emptyCounts(): ScratchCounts {
   return { hat: 0, pencil: 0, ribbon: 0 };
 }
@@ -63,7 +77,9 @@ export function toProgressPayload(counts: ScratchCounts): ScratchProgress {
     target,
     progress,
     fullyRevealed:
-      progress.hat >= 1 && progress.pencil >= 1 && progress.ribbon >= 1,
+      getForceComplete() ||
+      (progress.hat >= 1 && progress.pencil >= 1 && progress.ribbon >= 1),
+    complete: getForceComplete(),
   };
 }
 
@@ -90,6 +106,7 @@ export function clearMemoryScratchProgress() {
   const g = globalThis as typeof globalThis & GlobalScratch;
   g.__gsaScratchCounts = { hat: 0, pencil: 0, ribbon: 0 };
   g.__gsaScratchClaims = new Set();
+  g.__gsaForceComplete = false;
 }
 
 export function isScratchId(value: unknown): value is ScratchId {

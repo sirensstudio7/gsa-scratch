@@ -5,6 +5,7 @@ import {
   emptyCounts,
   getMemoryScratchProgress,
   isScratchId,
+  setForceComplete,
   setRevealTarget,
   toProgressPayload,
   type ScratchCounts,
@@ -63,13 +64,32 @@ export async function GET() {
   }
 }
 
-/** Staff: set expected total participants (reveal target per asset). */
+/** Staff: set expected total, or force the wall to 100%. */
 export async function PATCH(request: Request) {
   if (!(await authorize(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const body = await request.json().catch(() => ({}));
+
+  if (body?.complete === true) {
+    setForceComplete(true);
+    return NextResponse.json({
+      success: true,
+      complete: true,
+      ...getMemoryScratchProgress(),
+    });
+  }
+
+  if (body?.complete === false) {
+    setForceComplete(false);
+    return NextResponse.json({
+      success: true,
+      complete: false,
+      ...getMemoryScratchProgress(),
+    });
+  }
+
   const raw = Number(body?.target ?? body?.totalParticipants);
   if (!Number.isFinite(raw) || raw < 1) {
     return NextResponse.json(

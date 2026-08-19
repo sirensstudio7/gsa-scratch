@@ -6,7 +6,7 @@ import { StageShell } from "@/components/StageShell";
 
 export default function WelcomePage() {
   return (
-    <StageShell showTeamMark={false}>
+    <StageShell>
       <div className="flex flex-1 flex-col items-center justify-center px-4 pb-24 pt-6">
         <Link
           href="/play"
@@ -16,10 +16,10 @@ export default function WelcomePage() {
           <div className="hero-stage relative mx-auto w-[min(96vw,720px)]">
             <div className="hero-logo-wrap relative z-10 mx-auto">
               <Image
-                src="/assets/tg-logo-hero.png"
+                src="/assets/tg-logo-hero-v2.png"
                 alt="#Team Google — Google Student Ambassador Graduation Event"
-                width={585}
-                height={349}
+                width={1024}
+                height={605}
                 className="hero-logo-main h-auto w-full object-contain drop-shadow-lg"
                 priority
               />

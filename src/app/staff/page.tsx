@@ -15,6 +15,7 @@ export default function StaffPage() {
   const [other, setOther] = useState(0);
   const [expectedTotal, setExpectedTotal] = useState(20);
   const [expectedDraft, setExpectedDraft] = useState("20");
+  const [wallComplete, setWallComplete] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [soundOn, setSoundOn] = useState(false);
@@ -136,6 +137,7 @@ export default function StaffPage() {
         setExpectedTotal(scratch.target);
         setExpectedDraft(String(scratch.target));
       }
+      setWallComplete(scratch.complete === true);
     }
   }, [playScratchSound]);
 
@@ -188,6 +190,28 @@ export default function StaffPage() {
     setExpectedTotal(next);
     setExpectedDraft(String(next));
     setMessage(`Target disimpan: ${next} siswa.`);
+  };
+
+  const fillWall = async () => {
+    if (wallComplete) return;
+    if (
+      !confirm(
+        "Isi wall sampai 100% sekarang? Scratch akan jalan sampai penuh, lalu finale.",
+      )
+    ) {
+      return;
+    }
+    const res = await fetch("/api/scratch", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ complete: true }),
+    });
+    if (!res.ok) {
+      setMessage("Gagal mengisi wall.");
+      return;
+    }
+    setWallComplete(true);
+    setMessage("Wall diisi penuh. Cek projector /wall.");
   };
 
   const resetEvent = async () => {
@@ -355,6 +379,14 @@ export default function StaffPage() {
               >
                 Open Projector Wall
               </Link>
+              <button
+                type="button"
+                onClick={fillWall}
+                disabled={wallComplete}
+                className="rounded-full bg-[#34a853] py-3 font-bold text-white disabled:opacity-40"
+              >
+                {wallComplete ? "Wall sudah penuh" : "Isi wall penuh"}
+              </button>
               <a
                 href="/api/export"
                 className="rounded-full border-2 border-[#1a73e8] py-3 text-center font-bold text-[#1a73e8]"

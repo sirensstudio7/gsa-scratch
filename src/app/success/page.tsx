@@ -24,7 +24,7 @@ export default function SuccessPage() {
         <SuccessFireworks />
         <SuccessConfetti />
 
-        <div className="relative z-30 w-full max-w-6xl px-2">
+        <div className="font-google-sans relative z-30 w-full max-w-6xl px-2">
           {name ? (
             <p
               className="success-fade mb-3 text-lg font-semibold text-black"
