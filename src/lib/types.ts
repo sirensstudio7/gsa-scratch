@@ -37,7 +37,7 @@ export type ScratchId = (typeof SCRATCH_OBJECTS)[number]["id"];
 export const SESSION_KEYS = {
   name: "gsa_name",
   gender: "gsa_gender",
-  scratches: "gsa_scratches_v3",
+  scratches: "gsa_scratches_v4",
   submitted: "gsa_submitted",
   clientId: "gsa_client_id",
   reportedScratches: "gsa_reported_scratches_v2",

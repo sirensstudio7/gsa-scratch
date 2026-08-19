@@ -11,6 +11,7 @@ import {
   type Gender,
   type ScratchId,
 } from "@/lib/types";
+import { resetPlayStation } from "@/lib/play-session";
 
 type ScratchState = Record<ScratchId, boolean>;
 
@@ -65,6 +66,10 @@ export default function PlayPage() {
 
   useEffect(() => {
     try {
+      if (sessionStorage.getItem(SESSION_KEYS.submitted) === "1") {
+        resetPlayStation();
+        return;
+      }
       if (!sessionStorage.getItem(SESSION_KEYS.clientId)) {
         sessionStorage.setItem(SESSION_KEYS.clientId, crypto.randomUUID());
       }
@@ -107,6 +112,7 @@ export default function PlayPage() {
 
   useEffect(() => {
     try {
+      if (sessionStorage.getItem(SESSION_KEYS.submitted) === "1") return;
       sessionStorage.setItem(SESSION_KEYS.name, name);
       sessionStorage.setItem(SESSION_KEYS.gender, gender);
       sessionStorage.setItem(SESSION_KEYS.scratches, JSON.stringify(scratches));
@@ -154,6 +160,9 @@ export default function PlayPage() {
           return;
         }
         sessionStorage.setItem(SESSION_KEYS.submitted, "1");
+        sessionStorage.removeItem(SESSION_KEYS.scratches);
+        sessionStorage.removeItem(SESSION_KEYS.reportedScratches);
+        sessionStorage.setItem(SESSION_KEYS.clientId, crypto.randomUUID());
         router.push("/success");
       } catch {
         setError("Koneksi gagal. Coba lagi.");

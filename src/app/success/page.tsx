@@ -6,6 +6,7 @@ import { StageShell } from "@/components/StageShell";
 import { SuccessConfetti } from "@/components/SuccessConfetti";
 import { SuccessFireworks } from "@/components/SuccessFireworks";
 import { SESSION_KEYS } from "@/lib/types";
+import { resetPlayStation } from "@/lib/play-session";
 
 export default function SuccessPage() {
   const [name, setName] = useState("");
@@ -67,6 +68,7 @@ export default function SuccessPage() {
           </p>
           <Link
             href="/"
+            onClick={() => resetPlayStation()}
             className="success-fade mt-8 inline-flex rounded-full border-2 border-black px-6 py-2.5 text-sm font-bold text-black"
             style={{ animationDelay: "1.05s" }}
           >
