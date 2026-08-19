@@ -8,19 +8,19 @@ type WallHeroProgressProps = {
 };
 
 /**
- * Cover logo placed to match after-scratch.svg:
- * # landmark + Gemini star centers mapped onto the 1024×619 scene.
+ * Cover logo placed on the fitted 2048×1238 scene.
+ * Box is the #Team Google plaques + Gemini star in that frame.
  */
 const LOGO_PLACEMENT = {
-  x: 199.96 / 1024,
-  y: 47.64 / 619,
-  w: 549.36 / 1024,
-  h: 247.59 / 619,
+  x: 408 / 2048,
+  y: 103 / 1238,
+  w: 1086 / 2048,
+  h: 492 / 1238,
 };
 
 /**
  * Same lottery-ticket scratch as hat / pencil / ribbon.
- * Scene = after-scratch (rainbow Gemini).
+ * Scene = after (rainbow Gemini).
  * Cover = isolated #Team Google + white star, aligned to that scene.
  */
 export function WallHeroProgress({
@@ -29,8 +29,8 @@ export function WallHeroProgress({
 }: WallHeroProgressProps) {
   return (
     <WallRevealAsset
-      colorSrc="/assets/wall-hero-after.png?v=1"
-      whiteSrc="/assets/wall-logo-cover.png?v=2"
+      colorSrc="/assets/wall-hero-after.png?v=16"
+      whiteSrc="/assets/wall-logo-cover.png?v=16"
       alt="#Team Google — Google Student Ambassador Graduation Event"
       progress={progress}
       className={`wall-scratch-item--hero ${className}`.trim()}

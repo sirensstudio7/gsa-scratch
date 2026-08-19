@@ -44,6 +44,7 @@ export function ScratchCard({
   const scratchRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
   const lastPoint = useRef<{ x: number; y: number } | null>(null);
+  const sampleTick = useRef(0);
   const completedRef = useRef(completed);
   const baselineOpaque = useRef(0);
   const [ready, setReady] = useState(false);
@@ -152,6 +153,8 @@ export function ScratchCard({
     ctx.restore();
 
     lastPoint.current = { x, y };
+    sampleTick.current += 1;
+    if (sampleTick.current % 4 === 0) checkComplete();
   };
 
   const checkComplete = () => {
@@ -277,8 +280,10 @@ function sampleOpaque(canvas: HTMLCanvasElement) {
   tctx.drawImage(canvas, 0, 0, w, h);
   const data = tctx.getImageData(0, 0, w, h).data;
   let opaque = 0;
-  for (let i = 3; i < data.length; i += 4) {
-    if (data[i] > 40) opaque += 1;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] <= 40) continue;
+    const lum = (data[i] + data[i + 1] + data[i + 2]) / 3;
+    if (lum > 40) opaque += 1;
   }
   return opaque;
 }

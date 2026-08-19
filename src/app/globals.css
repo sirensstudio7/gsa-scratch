@@ -344,6 +344,187 @@ input {
   background: transparent;
 }
 
+.wall-scratch-item--hero img {
+  image-rendering: auto;
+}
+
+.wall-float-decor {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: visible;
+}
+
+.wall-float-piece {
+  position: absolute;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 14px rgba(26, 115, 232, 0.16));
+}
+
+.wall-float-reveal {
+  width: 100%;
+  height: 100%;
+}
+
+.wall-float-reveal img {
+  filter: none;
+}
+
+.wall-float-piece--ribbon {
+  top: 4%;
+  left: 0.7%;
+  width: 15.5%;
+  height: 40%;
+  animation: wall-float-a 4.6s ease-in-out infinite;
+}
+
+.wall-float-piece--hat {
+  top: 16%;
+  left: 75%;
+  width: 20%;
+  height: 30%;
+  animation: wall-float-b 5.2s ease-in-out infinite;
+}
+
+.wall-float-piece--pencil {
+  top: 55%;
+  left: 20.5%;
+  width: 16%;
+  height: 24%;
+  animation: wall-float-c 4.9s ease-in-out infinite;
+}
+
+.wall-float-piece--books {
+  top: 67.53%;
+  left: 43.95%;
+  width: 10.94%;
+  height: 17.77%;
+  animation: wall-float-b 5.6s ease-in-out infinite;
+}
+
+.wall-float-piece--stars-gold {
+  top: 48.79%;
+  left: 14.45%;
+  width: 7.62%;
+  height: 16.48%;
+  animation: wall-float-d 4.2s ease-in-out infinite;
+}
+
+.wall-float-piece--stars-green {
+  top: 53.63%;
+  left: 89.65%;
+  width: 9.38%;
+  height: 15.83%;
+  animation: wall-float-e 4.8s ease-in-out infinite;
+}
+
+.wall-float-piece--bit-a {
+  top: 5.82%;
+  left: 1.37%;
+  width: 4.1%;
+  height: 7.43%;
+  animation: wall-float-d 3.8s ease-in-out infinite;
+}
+
+.wall-float-piece--bit-c {
+  top: 17.45%;
+  left: 78.13%;
+  width: 5.08%;
+  height: 6.46%;
+  animation: wall-float-a 4.3s ease-in-out infinite;
+}
+
+.wall-float-piece--bit-d {
+  top: 39.1%;
+  left: 11.33%;
+  width: 4.1%;
+  height: 7.11%;
+  animation: wall-float-b 3.6s ease-in-out infinite;
+}
+
+.wall-float-piece--bit-e {
+  top: 38.45%;
+  left: 73.83%;
+  width: 4.3%;
+  height: 7.43%;
+  animation: wall-float-d 5.4s ease-in-out infinite;
+}
+
+.wall-float-piece--bit-f {
+  top: 77.87%;
+  left: 63.09%;
+  width: 4.1%;
+  height: 7.11%;
+  animation: wall-float-c 4.4s ease-in-out infinite;
+}
+
+.wall-float-piece--bit-g {
+  top: 94.02%;
+  left: 39.65%;
+  width: 4.88%;
+  height: 5.82%;
+  animation: wall-float-e 3.9s ease-in-out infinite;
+}
+
+.wall-float-piece--bit-h {
+  top: 67.85%;
+  left: 78.13%;
+  width: 4.69%;
+  height: 7.75%;
+  animation: wall-float-a 5.1s ease-in-out infinite;
+}
+
+@keyframes wall-float-a {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-6deg);
+  }
+  50% {
+    transform: translateY(-12px) rotate(-1deg);
+  }
+}
+
+@keyframes wall-float-b {
+  0%,
+  100% {
+    transform: translateY(0) rotate(5deg);
+  }
+  50% {
+    transform: translate(4px, -12px) rotate(9deg);
+  }
+}
+
+@keyframes wall-float-c {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-30deg);
+  }
+  50% {
+    transform: translate(-4px, -10px) rotate(-24deg);
+  }
+}
+
+@keyframes wall-float-d {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-8deg);
+  }
+  50% {
+    transform: translate(3px, -8px) rotate(4deg);
+  }
+}
+
+@keyframes wall-float-e {
+  0%,
+  100% {
+    transform: translateY(0) rotate(6deg);
+  }
+  50% {
+    transform: translate(-3px, -9px) rotate(-4deg);
+  }
+}
+
 .hero-cluster {
   width: min(86vw, 420px);
 }

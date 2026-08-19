@@ -20,6 +20,41 @@ const emptyScratches: ScratchState = {
   ribbon: false,
 };
 
+const reportInFlight = new Set<ScratchId>();
+
+async function reportAssetComplete(id: ScratchId) {
+  if (reportInFlight.has(id)) return;
+  reportInFlight.add(id);
+  try {
+    let clientId = sessionStorage.getItem(SESSION_KEYS.clientId) || "";
+    if (!clientId) {
+      clientId = crypto.randomUUID();
+      sessionStorage.setItem(SESSION_KEYS.clientId, clientId);
+    }
+
+    const res = await fetch("/api/scratch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ asset: id, clientId }),
+    });
+    if (!res.ok) return;
+
+    const raw = sessionStorage.getItem(SESSION_KEYS.reportedScratches);
+    const reported = raw
+      ? (JSON.parse(raw) as Partial<Record<ScratchId, boolean>>)
+      : {};
+    reported[id] = true;
+    sessionStorage.setItem(
+      SESSION_KEYS.reportedScratches,
+      JSON.stringify(reported),
+    );
+  } catch {
+    /* ignore */
+  } finally {
+    reportInFlight.delete(id);
+  }
+}
+
 export default function PlayPage() {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -61,6 +96,9 @@ export default function PlayPage() {
           ...JSON.parse(savedScratch),
         } as ScratchState;
         setScratches(parsed);
+        for (const id of ["hat", "pencil", "ribbon"] as const) {
+          if (parsed[id]) void reportAssetComplete(id);
+        }
       }
     } catch {
       /* ignore */
@@ -87,6 +125,7 @@ export default function PlayPage() {
 
   const markDone = (id: ScratchId) => {
     setScratches((prev) => ({ ...prev, [id]: true }));
+    void reportAssetComplete(id);
   };
 
   const onSubmit = () => {

@@ -10,8 +10,9 @@ import {
 } from "react";
 import { StageShell } from "@/components/StageShell";
 import { WallHeroProgress } from "@/components/WallHeroProgress";
+import { WallFloatDecor } from "@/components/WallFloatDecor";
 import { WallSuccessOverlay } from "@/components/WallSuccessOverlay";
-import { type Participant } from "@/lib/types";
+import { type Participant, type ScratchId } from "@/lib/types";
 import { isSupabaseConfigured, getSupabaseBrowser } from "@/lib/supabase";
 
 const WALL_NAME_ACCENTS = ["#4285f4", "#ea4335", "#fbbc05", "#34a853"] as const;
@@ -40,16 +41,37 @@ function genderAvatarSrc(gender: string) {
   return null;
 }
 
+function readAssetProgress(scratch: {
+  complete?: boolean;
+  progress?: Partial<Record<ScratchId, number>>;
+}): Record<ScratchId, number> {
+  if (scratch.complete === true) {
+    return { hat: 1, pencil: 1, ribbon: 1 };
+  }
+  const next = { hat: 0, pencil: 0, ribbon: 0 };
+  for (const id of ["hat", "pencil", "ribbon"] as const) {
+    const n = Number(scratch.progress?.[id]);
+    next[id] = Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0;
+  }
+  return next;
+}
+
 export default function WallPage() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [toasts, setToasts] = useState<WallToast[]>([]);
   const [target, setTarget] = useState(20);
   const [forceComplete, setForceComplete] = useState(false);
+  const [assetProgress, setAssetProgress] = useState<Record<ScratchId, number>>({
+    hat: 0,
+    pencil: 0,
+    ribbon: 0,
+  });
   const [displayProgress, setDisplayProgress] = useState(0);
   const seenIds = useRef(new Set<string>());
   const accentTick = useRef(0);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>[]>());
   const displayProgressRef = useRef(0);
+  const prevAssetProgress = useRef(assetProgress);
   const animRaf = useRef(0);
   const [hydrated, setHydrated] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -59,12 +81,20 @@ export default function WallPage() {
   const soundEnabledRef = useRef(false);
   const audioUnlockedRef = useRef(false);
 
-  /** Wall reveal = submitted students / staff target, or staff force-complete */
+  /** #Team Google + Gemini scratch when a student hits Submit. */
   const revealProgress = useMemo(() => {
     if (forceComplete) return 1;
     if (target <= 0) return 0;
     return Math.min(1, participants.length / target);
   }, [forceComplete, participants.length, target]);
+
+  const floatProgress = useMemo(
+    () =>
+      forceComplete
+        ? { hat: 1, pencil: 1, ribbon: 1 }
+        : assetProgress,
+    [forceComplete, assetProgress],
+  );
 
   useEffect(() => {
     const audio = new Audio(SCRATCH_SOUND_SRC);
@@ -238,6 +268,20 @@ export default function WallPage() {
     return () => cancelAnimationFrame(animRaf.current);
   }, [revealProgress, hydrated, playScratchSound]);
 
+  useEffect(() => {
+    if (!hydrated) {
+      prevAssetProgress.current = assetProgress;
+      return;
+    }
+    const prev = prevAssetProgress.current;
+    const rose =
+      assetProgress.hat > prev.hat + 0.0005 ||
+      assetProgress.pencil > prev.pencil + 0.0005 ||
+      assetProgress.ribbon > prev.ribbon + 0.0005;
+    prevAssetProgress.current = assetProgress;
+    if (rose) playScratchSound();
+  }, [assetProgress, hydrated, playScratchSound]);
+
   /** After the wipe finishes at 100%, show the wall success finale. */
   useEffect(() => {
     if (displayProgress < 0.999) {
@@ -307,6 +351,7 @@ export default function WallPage() {
         setTarget(scratch.target);
       }
       setForceComplete(scratch.complete === true);
+      setAssetProgress(readAssetProgress(scratch));
       setHydrated(true);
 
       pollTimer = setInterval(async () => {
@@ -326,10 +371,11 @@ export default function WallPage() {
             setTarget(dScratch.target);
           }
           setForceComplete(dScratch.complete === true);
+          setAssetProgress(readAssetProgress(dScratch));
         } catch {
           /* ignore */
         }
-      }, 1500);
+      }, 700);
 
       if (data.mode !== "memory" && isSupabaseConfigured()) {
         try {
@@ -368,14 +414,17 @@ export default function WallPage() {
   }, [mergeParticipant, pushToast]);
 
   return (
-    <StageShell>
+    <StageShell showTeamMark={false}>
       <div className="relative z-0 flex min-h-0 flex-1 items-center justify-center px-10 pb-8 pt-4">
         <div
-          className={`wall-scratch-stage flex w-full max-w-7xl items-center justify-center transition-opacity duration-700 ${
+          className={`wall-scratch-stage relative flex w-full max-w-7xl items-center justify-center transition-opacity duration-700 ${
             showSuccess ? "pointer-events-none opacity-0" : "opacity-100"
           }`}
         >
-          <WallHeroProgress progress={displayProgress} />
+          <div className="relative">
+            <WallHeroProgress progress={revealProgress} />
+            <WallFloatDecor progress={floatProgress} />
+          </div>
         </div>
       </div>
 

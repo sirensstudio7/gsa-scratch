@@ -6,7 +6,7 @@ import { StageShell } from "@/components/StageShell";
 
 export default function WelcomePage() {
   return (
-    <StageShell>
+    <StageShell showTeamMark={false}>
       <div className="flex flex-1 flex-col items-center justify-center px-4 pb-24 pt-6">
         <Link
           href="/play"

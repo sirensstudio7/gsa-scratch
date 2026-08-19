@@ -6,11 +6,13 @@ import type { ReactNode } from "react";
 
 type StageProps = {
   children: ReactNode;
+  showTeamMark?: boolean;
   className?: string;
 };
 
 export function StageShell({
   children,
+  showTeamMark = true,
   className = "",
 }: StageProps) {
   return (
@@ -43,7 +45,18 @@ export function StageShell({
         }}
       />
 
-      <header className="relative z-20 flex shrink-0 items-start px-4 pt-4 sm:px-6 sm:pt-5">
+      {showTeamMark ? (
+        <Image
+          src="/assets/tg-logo.png"
+          alt="#Team Google — Google Student Ambassador Graduation Event"
+          width={1024}
+          height={611}
+          className="pointer-events-none absolute right-1 top-1 z-30 h-16 w-auto object-contain sm:right-4 sm:top-2 sm:h-40 md:h-44"
+          priority
+        />
+      ) : null}
+
+      <header className="relative z-20 flex shrink-0 items-start justify-between px-4 pt-4 sm:px-6 sm:pt-5">
         <Link href="/" className="block" aria-label="Home">
           <Image
             src="/assets/glogo.png"
@@ -54,6 +67,11 @@ export function StageShell({
             priority
           />
         </Link>
+        {showTeamMark ? (
+          <div className="h-9 w-[7.5rem] sm:h-10 sm:w-40" aria-hidden />
+        ) : (
+          <span />
+        )}
       </header>
 
       <main className="relative z-10 flex min-h-0 flex-1 flex-col">

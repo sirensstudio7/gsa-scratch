@@ -11,6 +11,8 @@ type WallRevealAssetProps = {
   /** 0 = fully white, 1 = fully color */
   progress: number;
   className?: string;
+  /** Keep the 380px wall-scratch-item box. Floats pass false. */
+  boxed?: boolean;
   /** Keep dark pixels (hero art). Default knocks out black bg from scratch objects. */
   knockOutBlack?: boolean;
   /** Normalized box (0–1 of the fitted image) where the scribble runs. */
@@ -22,7 +24,12 @@ type WallRevealAssetProps = {
 type Rect = { x: number; y: number; w: number; h: number };
 type Point = { x: number; y: number };
 type Spark = { x: number; y: number; vx: number; vy: number; life: number; max: number; r: number };
-type Job = { points: Point[]; index: number; toProgress: number };
+type Job = {
+  points: Point[];
+  index: number;
+  fromProgress: number;
+  toProgress: number;
+};
 
 /**
  * Color underneath. White on top.
@@ -36,6 +43,7 @@ export function WallRevealAsset({
   progress,
   className = "",
   knockOutBlack = true,
+  boxed = true,
   scratchFocus,
   coverPlacement,
 }: WallRevealAssetProps) {
@@ -72,6 +80,12 @@ export function WallRevealAsset({
       scratchRef.current = scratch;
     }
     if (scratch.width !== w || scratch.height !== h) {
+      // Ignore 1px jitter from float CSS transforms
+      const dw = Math.abs(scratch.width - w);
+      const dh = Math.abs(scratch.height - h);
+      if (scratch.width > 0 && dw <= 2 && dh <= 2) {
+        return scratch;
+      }
       scratch.width = w;
       scratch.height = h;
       const sctx = scratch.getContext("2d");
@@ -114,10 +128,13 @@ export function WallRevealAsset({
     toP: number,
   ) => {
     const path = makeScribble(dest, fromP, toP, alt);
-    if (path.length < 2) return;
-    for (let i = 1; i < path.length; i += 1) {
-      carveAlong(sctx, path[i - 1]!, path[i]!, dest.w * 0.085);
+    if (path.length >= 2) {
+      const brush = brushFor(dest, fromP, toP);
+      for (let i = 1; i < path.length; i += 1) {
+        carveAlong(sctx, path[i - 1]!, path[i]!, brush);
+      }
     }
+    carveSlice(sctx, dest, fromP, toP);
   };
 
   const paint = useCallback(() => {
@@ -128,8 +145,8 @@ export function WallRevealAsset({
 
     const rect = container.getBoundingClientRect();
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const width = Math.max(1, Math.floor(rect.width));
-    const height = Math.max(1, Math.floor(rect.height));
+    const width = Math.max(1, Math.round(container.clientWidth || rect.width));
+    const height = Math.max(1, Math.round(container.clientHeight || rect.height));
 
     const pxW = Math.floor(width * dpr);
     const pxH = Math.floor(height * dpr);
@@ -147,13 +164,15 @@ export function WallRevealAsset({
     ctx.imageSmoothingQuality = "high";
     ctx.clearRect(0, 0, width, height);
 
-    const { white, whiteBox } = loaded;
+    const { white, whiteBox, color, colorBox } = loaded;
+    const alignedFloat = knockOutBlack && !coverPlacement;
+    const colorDest = containFit(colorBox.w, colorBox.h, width, height, 1);
     const coverDest = coverPlacement
       ? {
-          x: width * coverPlacement.x,
-          y: height * coverPlacement.y,
-          w: width * coverPlacement.w,
-          h: height * coverPlacement.h,
+          x: colorDest.x + colorDest.w * coverPlacement.x,
+          y: colorDest.y + colorDest.h * coverPlacement.y,
+          w: colorDest.w * coverPlacement.w,
+          h: colorDest.h * coverPlacement.h,
         }
       : containFit(whiteBox.w, whiteBox.h, width, height, 1);
     destRef.current = focusDest(coverDest, scratchFocus);
@@ -167,6 +186,28 @@ export function WallRevealAsset({
       if (seedTo > 0.001) seedBand(sctx, destRef.current, 0, seedTo);
       appliedProgressRef.current = seedTo;
       seededRef.current = true;
+    }
+
+    if (alignedFloat) {
+      const lw = Math.max(1, Math.floor(coverDest.w * dpr));
+      const lh = Math.max(1, Math.floor(coverDest.h * dpr));
+      let layer = colorLayerRef.current;
+      if (!layer || layer.width !== lw || layer.height !== lh) {
+        layer = document.createElement("canvas");
+        layer.width = lw;
+        layer.height = lh;
+        const lctx = layer.getContext("2d");
+        if (lctx) {
+          lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          const local = { x: 0, y: 0, w: coverDest.w, h: coverDest.h };
+          drawColorLayer(lctx, color, colorBox, local);
+          lctx.globalCompositeOperation = "destination-in";
+          drawMaskLayer(lctx, white, whiteBox, local);
+          lctx.globalCompositeOperation = "source-over";
+        }
+        colorLayerRef.current = layer;
+      }
+      ctx.drawImage(layer, coverDest.x, coverDest.y, coverDest.w, coverDest.h);
     }
 
     if (appliedProgressRef.current < 0.999 || jobRef.current) {
@@ -214,7 +255,7 @@ export function WallRevealAsset({
       ctx.fill();
     }
     ctx.globalAlpha = 1;
-  }, [alt, scratchFocus, coverPlacement]);
+  }, [alt, scratchFocus, coverPlacement, knockOutBlack]);
 
   useEffect(() => {
     const tick = (now: number) => {
@@ -253,17 +294,27 @@ export function WallRevealAsset({
           jobRef.current = {
             points: makeScribble(dest, applied, target, `${alt}-${applied.toFixed(3)}`),
             index: 1,
+            fromProgress: applied,
             toProgress: target,
           };
           lastTipRef.current = jobRef.current.points[0] ?? null;
           delayUntilRef.current = 0;
         }
+      } else if (jobRef.current && target > jobRef.current.toProgress + 0.0008) {
+        const extra = makeScribble(
+          dest,
+          jobRef.current.toProgress,
+          target,
+          `${alt}-${target.toFixed(3)}`,
+        );
+        jobRef.current.points.push(...extra);
+        jobRef.current.toProgress = target;
       }
 
       const job = jobRef.current;
       if (job) {
         const steps = Math.max(1, Math.round(dt / 8));
-        const brush = dest.w * (0.072 + Math.random() * 0.03);
+        const brush = brushFor(dest, job.fromProgress, job.toProgress);
         for (let s = 0; s < steps && job.index < job.points.length; s += 1) {
           const from = job.points[job.index - 1]!;
           const to = job.points[job.index]!;
@@ -276,8 +327,10 @@ export function WallRevealAsset({
           applied +
           (job.toProgress - applied) *
             Math.min(1, job.index / Math.max(2, job.points.length));
+        carveSlice(sctx, dest, job.fromProgress, appliedProgressRef.current);
         dirty = true;
         if (job.index >= job.points.length) {
+          carveSlice(sctx, dest, job.fromProgress, job.toProgress);
           appliedProgressRef.current = job.toProgress;
           jobRef.current = null;
           lastTipRef.current = null;
@@ -352,9 +405,14 @@ export function WallRevealAsset({
       paint();
     };
     window.addEventListener("resize", onResize);
+    const ro = new ResizeObserver(() => {
+      paint();
+    });
+    if (containerRef.current) ro.observe(containerRef.current);
     return () => {
       cancelled = true;
       window.removeEventListener("resize", onResize);
+      ro.disconnect();
     };
   }, [colorSrc, whiteSrc, knockOutBlack, paint]);
 
@@ -362,19 +420,23 @@ export function WallRevealAsset({
     paint();
   }, [progress, paint]);
 
+  const useSceneImg = Boolean(coverPlacement) || !knockOutBlack;
+
   return (
     <div
       ref={containerRef}
-      className={`wall-scratch-item relative ${className}`.trim()}
+      className={`${boxed ? "wall-scratch-item " : ""}relative ${className}`.trim()}
       aria-label={alt}
     >
-      <img
-        src={colorSrc}
-        alt=""
-        draggable={false}
-        className="pointer-events-none absolute inset-0 h-full w-full object-contain drop-shadow-lg"
-        aria-hidden
-      />
+      {useSceneImg ? (
+        <img
+          src={colorSrc}
+          alt=""
+          draggable={false}
+          className="pointer-events-none absolute inset-0 h-full w-full object-contain drop-shadow-lg"
+          aria-hidden
+        />
+      ) : null}
       <canvas
         ref={canvasRef}
         className="pointer-events-none absolute inset-0 h-full w-full bg-transparent"
@@ -390,12 +452,39 @@ function hashDelay(key: string) {
   return n;
 }
 
+/** Reveal exactly this progress band so N students = N equal slices. */
+function carveSlice(
+  sctx: CanvasRenderingContext2D,
+  dest: Rect,
+  fromP: number,
+  toP: number,
+) {
+  const yBot = dest.y + dest.h * (1 - fromP);
+  const yTop = dest.y + dest.h * (1 - toP);
+  const h = Math.max(0, yBot - yTop);
+  if (h < 0.5) return;
+  sctx.save();
+  sctx.globalCompositeOperation = "destination-out";
+  sctx.fillStyle = "#000";
+  sctx.fillRect(dest.x - 2, yTop, dest.w + 4, h);
+  sctx.restore();
+}
+
+/** Lottery stroke stays inside this progress slice (1/target of the cover). */
+function brushFor(dest: Rect, fromP: number, toP: number) {
+  const band = Math.max(1, dest.h * Math.max(0, toP - fromP));
+  const maxB = Math.max(7, Math.min(dest.w, dest.h) * 0.05);
+  return Math.min(maxB, Math.max(3.5, band * 0.5));
+}
+
 function makeScribble(dest: Rect, fromP: number, toP: number, seedKey: string) {
   const points: Point[] = [];
   const yBot = dest.y + dest.h * (1 - fromP);
   const yTop = dest.y + dest.h * (1 - toP);
-  const band = Math.max(18, yBot - yTop);
-  const rows = Math.max(3, Math.round(band / 11));
+  const band = Math.max(1, yBot - yTop);
+  const rowGap = Math.max(5, Math.min(9, dest.h * 0.028));
+  const rows = Math.max(1, Math.round(band / rowGap));
+  const jitter = Math.min(3.5, band * 0.1);
   let seed = 1;
   for (let i = 0; i < seedKey.length; i += 1) seed = (seed * 31 + seedKey.charCodeAt(i)) >>> 0;
   const rnd = () => {
@@ -404,8 +493,8 @@ function makeScribble(dest: Rect, fromP: number, toP: number, seedKey: string) {
   };
 
   for (let r = 0; r < rows; r += 1) {
-    const t = r / Math.max(1, rows - 1);
-    const y = yBot - t * band + (rnd() - 0.5) * 7;
+    const t = rows === 1 ? 0.5 : r / (rows - 1);
+    const y = yBot - t * band + (rnd() - 0.5) * jitter;
     const pad = dest.w * 0.04;
     const left = dest.x + pad + rnd() * dest.w * 0.08;
     const right = dest.x + dest.w - pad - rnd() * dest.w * 0.08;
@@ -417,7 +506,7 @@ function makeScribble(dest: Rect, fromP: number, toP: number, seedKey: string) {
       const u = s / segs;
       points.push({
         x: start + (end - start) * u,
-        y: y + Math.sin(u * Math.PI * 2.2) * 6 + (rnd() - 0.5) * 5,
+        y: y + Math.sin(u * Math.PI * 2.2) * jitter + (rnd() - 0.5) * jitter,
       });
     }
   }
@@ -502,6 +591,40 @@ function contentBounds(
     w: Math.max(1, Math.ceil((maxX - minX + 1) * inv)),
     h: Math.max(1, Math.ceil((maxY - minY + 1) * inv)),
   };
+}
+
+function drawColorLayer(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  src: Rect,
+  dest: Rect,
+) {
+  const off = document.createElement("canvas");
+  off.width = Math.max(1, Math.floor(dest.w));
+  off.height = Math.max(1, Math.floor(dest.h));
+  const octx = off.getContext("2d");
+  if (!octx) return;
+
+  octx.drawImage(
+    img,
+    src.x,
+    src.y,
+    src.w,
+    src.h,
+    0,
+    0,
+    off.width,
+    off.height,
+  );
+
+  const imageData = octx.getImageData(0, 0, off.width, off.height);
+  const d = imageData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const lum = (d[i] + d[i + 1] + d[i + 2]) / 3;
+    if (lum < 28) d[i + 3] = 0;
+  }
+  octx.putImageData(imageData, 0, 0);
+  ctx.drawImage(off, dest.x, dest.y, dest.w, dest.h);
 }
 
 function drawMaskLayer(

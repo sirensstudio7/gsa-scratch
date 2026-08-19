@@ -40,5 +40,5 @@ export const SESSION_KEYS = {
   scratches: "gsa_scratches_v3",
   submitted: "gsa_submitted",
   clientId: "gsa_client_id",
-  reportedScratches: "gsa_reported_scratches_v1",
+  reportedScratches: "gsa_reported_scratches_v2",
 } as const;
