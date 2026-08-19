@@ -19,6 +19,9 @@ export default function StaffPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [soundOn, setSoundOn] = useState(false);
+  const [simRunning, setSimRunning] = useState(false);
+  const [simDone, setSimDone] = useState(0);
+  const simAbort = useRef(false);
   const scratchAudio = useRef<HTMLAudioElement | null>(null);
   const lastTotalForSound = useRef<number | null>(null);
   const soundOnRef = useRef(false);
@@ -223,6 +226,7 @@ export default function StaffPage() {
   };
 
   const resetEvent = async () => {
+    if (simRunning) simAbort.current = true;
     if (!confirm("Reset semua participant data? Tidak bisa dibatalkan.")) {
       return;
     }
@@ -238,6 +242,65 @@ export default function StaffPage() {
     setMessage("Event data di-reset.");
     lastTotalForSound.current = 0;
     await refreshStats();
+  };
+
+  const simulate100 = async () => {
+    if (simRunning) {
+      simAbort.current = true;
+      return;
+    }
+    if (
+      !confirm(
+        "Simulasi 100 siswa ke /wall?\n\nReset dulu kalau sudah ada data nyata.\nTarget di-set ke 100, lalu nama palsu masuk satu per satu (~35 detik) supaya progress + toast kelihatan di projector.\n\nReset Event Data lagi setelah tes.",
+      )
+    ) {
+      return;
+    }
+    simAbort.current = false;
+    setSimRunning(true);
+    setSimDone(0);
+    setMessage("Simulasi jalan… buka /wall di projector.");
+
+    const targetRes = await fetch("/api/scratch", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target: 100 }),
+    });
+    if (!targetRes.ok) {
+      setSimRunning(false);
+      setMessage("Gagal set target 100.");
+      return;
+    }
+    setExpectedTotal(100);
+    setExpectedDraft("100");
+
+    const total = 100;
+    let done = 0;
+    for (let i = 0; i < total; i += 1) {
+      if (simAbort.current) break;
+      const res = await fetch("/api/simulate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ count: 1, offset: i }),
+      });
+      if (!res.ok) {
+        setMessage(`Simulasi gagal di ${i + 1}/100.`);
+        break;
+      }
+      done = i + 1;
+      setSimDone(done);
+      await new Promise((r) => setTimeout(r, 320));
+    }
+
+    const stopped = simAbort.current;
+    simAbort.current = false;
+    setSimRunning(false);
+    await refreshStats();
+    setMessage(
+      stopped
+        ? `Simulasi dihentikan di ${done}/100. Cek /wall.`
+        : "Simulasi 100 siswa selesai. Cek projector /wall.",
+    );
   };
 
   return (
@@ -387,6 +450,15 @@ export default function StaffPage() {
               >
                 Open Projector Wall
               </Link>
+              <button
+                type="button"
+                onClick={() => void simulate100()}
+                className="rounded-full bg-[#fbbc05] py-3 font-bold text-[#1f1f1f]"
+              >
+                {simRunning
+                  ? `Stop simulasi (${simDone}/100)`
+                  : "Simulasi 100 siswa"}
+              </button>
               <button
                 type="button"
                 onClick={fillWall}
