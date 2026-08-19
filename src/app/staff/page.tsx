@@ -22,6 +22,10 @@ export default function StaffPage() {
   const scratchAudio = useRef<HTMLAudioElement | null>(null);
   const lastTotalForSound = useRef<number | null>(null);
   const soundOnRef = useRef(false);
+  const expectedTotalRef = useRef(expectedTotal);
+  const expectedDraftRef = useRef(expectedDraft);
+  expectedTotalRef.current = expectedTotal;
+  expectedDraftRef.current = expectedDraft;
 
   useEffect(() => {
     soundOnRef.current = soundOn;
@@ -135,7 +139,11 @@ export default function StaffPage() {
       const scratch = await scratchRes.json();
       if (typeof scratch.target === "number") {
         setExpectedTotal(scratch.target);
-        setExpectedDraft(String(scratch.target));
+        const draft = expectedDraftRef.current;
+        const saved = String(expectedTotalRef.current);
+        if (draft === saved) {
+          setExpectedDraft(String(scratch.target));
+        }
       }
       setWallComplete(scratch.complete === true);
     }

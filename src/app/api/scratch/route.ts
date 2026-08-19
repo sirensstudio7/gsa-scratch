@@ -70,7 +70,7 @@ async function writeSupabaseSettings(patch: {
   };
   const { error } = await getSupabaseAdmin()
     .from("scratch_settings")
-    .upsert(next);
+    .upsert(next, { onConflict: "id" });
   if (error) throw error;
   setRevealTarget(next.target);
   setForceComplete(next.complete);
@@ -187,6 +187,10 @@ export async function PATCH(request: Request) {
       await writeSupabaseSettings({ target });
     } catch (err) {
       console.error("scratch PATCH target supabase fallback", err);
+      return NextResponse.json(
+        { error: "Gagal menyimpan target" },
+        { status: 500 },
+      );
     }
   }
   return NextResponse.json({

@@ -73,3 +73,10 @@ create policy "Allow public read scratch_settings"
   for select
   to anon, authenticated
   using (true);
+
+create policy "Allow anon write scratch_settings"
+  on public.scratch_settings
+  for all
+  to anon, authenticated
+  using (true)
+  with check (true);
