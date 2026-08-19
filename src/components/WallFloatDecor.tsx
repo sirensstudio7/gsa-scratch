@@ -67,7 +67,7 @@ type WallFloatDecorProps = {
   progress: AssetProgress;
 };
 
-/** HQ hat/ribbon/pencil scratch as students finish those cards; extras just float. */
+/** HQ hat/ribbon/pencil scratch as students submit toward the staff target. */
 export function WallFloatDecor({ progress }: WallFloatDecorProps) {
   return (
     <div className="wall-float-decor" aria-hidden>

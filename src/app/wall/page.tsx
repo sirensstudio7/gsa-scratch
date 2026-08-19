@@ -12,7 +12,7 @@ import { StageShell } from "@/components/StageShell";
 import { WallHeroProgress } from "@/components/WallHeroProgress";
 import { WallFloatDecor } from "@/components/WallFloatDecor";
 import { WallSuccessOverlay } from "@/components/WallSuccessOverlay";
-import { type Participant, type ScratchId } from "@/lib/types";
+import { type Participant } from "@/lib/types";
 import { isSupabaseConfigured, getSupabaseBrowser } from "@/lib/supabase";
 
 const WALL_NAME_ACCENTS = ["#4285f4", "#ea4335", "#fbbc05", "#34a853"] as const;
@@ -41,37 +41,16 @@ function genderAvatarSrc(gender: string) {
   return null;
 }
 
-function readAssetProgress(scratch: {
-  complete?: boolean;
-  progress?: Partial<Record<ScratchId, number>>;
-}): Record<ScratchId, number> {
-  if (scratch.complete === true) {
-    return { hat: 1, pencil: 1, ribbon: 1 };
-  }
-  const next = { hat: 0, pencil: 0, ribbon: 0 };
-  for (const id of ["hat", "pencil", "ribbon"] as const) {
-    const n = Number(scratch.progress?.[id]);
-    next[id] = Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0;
-  }
-  return next;
-}
-
 export default function WallPage() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [toasts, setToasts] = useState<WallToast[]>([]);
   const [target, setTarget] = useState(20);
   const [forceComplete, setForceComplete] = useState(false);
-  const [assetProgress, setAssetProgress] = useState<Record<ScratchId, number>>({
-    hat: 0,
-    pencil: 0,
-    ribbon: 0,
-  });
   const [displayProgress, setDisplayProgress] = useState(0);
   const seenIds = useRef(new Set<string>());
   const accentTick = useRef(0);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>[]>());
   const displayProgressRef = useRef(0);
-  const prevAssetProgress = useRef(assetProgress);
   const animRaf = useRef(0);
   const [hydrated, setHydrated] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -81,7 +60,7 @@ export default function WallPage() {
   const soundEnabledRef = useRef(false);
   const audioUnlockedRef = useRef(false);
 
-  /** #Team Google + Gemini scratch when a student hits Submit. */
+  /** White → color for #Team Google, hat, pencil, and ribbon = submits / staff target. */
   const revealProgress = useMemo(() => {
     if (forceComplete) return 1;
     if (target <= 0) return 0;
@@ -89,11 +68,12 @@ export default function WallPage() {
   }, [forceComplete, participants.length, target]);
 
   const floatProgress = useMemo(
-    () =>
-      forceComplete
-        ? { hat: 1, pencil: 1, ribbon: 1 }
-        : assetProgress,
-    [forceComplete, assetProgress],
+    () => ({
+      hat: revealProgress,
+      pencil: revealProgress,
+      ribbon: revealProgress,
+    }),
+    [revealProgress],
   );
 
   useEffect(() => {
@@ -268,20 +248,6 @@ export default function WallPage() {
     return () => cancelAnimationFrame(animRaf.current);
   }, [revealProgress, hydrated, playScratchSound]);
 
-  useEffect(() => {
-    if (!hydrated) {
-      prevAssetProgress.current = assetProgress;
-      return;
-    }
-    const prev = prevAssetProgress.current;
-    const rose =
-      assetProgress.hat > prev.hat + 0.0005 ||
-      assetProgress.pencil > prev.pencil + 0.0005 ||
-      assetProgress.ribbon > prev.ribbon + 0.0005;
-    prevAssetProgress.current = assetProgress;
-    if (rose) playScratchSound();
-  }, [assetProgress, hydrated, playScratchSound]);
-
   /** After the wipe finishes at 100%, show the wall success finale. */
   useEffect(() => {
     if (displayProgress < 0.999) {
@@ -351,7 +317,6 @@ export default function WallPage() {
         setTarget(scratch.target);
       }
       setForceComplete(scratch.complete === true);
-      setAssetProgress(readAssetProgress(scratch));
       setHydrated(true);
 
       pollTimer = setInterval(async () => {
@@ -371,7 +336,6 @@ export default function WallPage() {
             setTarget(dScratch.target);
           }
           setForceComplete(dScratch.complete === true);
-          setAssetProgress(readAssetProgress(dScratch));
         } catch {
           /* ignore */
         }
