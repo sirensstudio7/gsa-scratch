@@ -76,7 +76,6 @@ export async function PATCH(request: Request) {
     setForceComplete(true);
     return NextResponse.json({
       success: true,
-      complete: true,
       ...getMemoryScratchProgress(),
     });
   }
@@ -85,7 +84,6 @@ export async function PATCH(request: Request) {
     setForceComplete(false);
     return NextResponse.json({
       success: true,
-      complete: false,
       ...getMemoryScratchProgress(),
     });
   }
