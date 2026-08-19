@@ -34,6 +34,12 @@ function hashTilt(id: string) {
   return n;
 }
 
+function genderAvatarSrc(gender: string) {
+  if (gender === "Pria" || gender === "Male") return "/assets/avatar-pria.png";
+  if (gender === "Wanita" || gender === "Female") return "/assets/avatar-wanita.png";
+  return null;
+}
+
 export default function WallPage() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [toasts, setToasts] = useState<WallToast[]>([]);
@@ -380,6 +386,7 @@ export default function WallPage() {
       >
         {toasts.map((t) => {
           const tilt = ((hashTilt(t.id) % 11) - 5) * 1.4;
+          const avatarSrc = genderAvatarSrc(t.gender);
           return (
             <div
               key={t.id}
@@ -395,7 +402,13 @@ export default function WallPage() {
                 } as CSSProperties
               }
             >
-              <span className="wall-name-dot" aria-hidden />
+              {avatarSrc ? (
+                <span className="wall-name-avatar">
+                  <img src={avatarSrc} alt="" />
+                </span>
+              ) : (
+                <span className="wall-name-dot" aria-hidden />
+              )}
               <span className="wall-name-text">{t.name}</span>
             </div>
           );
