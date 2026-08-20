@@ -33,8 +33,8 @@ type Job = {
 
 /**
  * Color underneath. White on top.
- * When progress rises, a visible scribble scratch (lottery-ticket style)
- * carves color through, with sparks at the tip.
+ * When progress rises, a bristle brush carves color through
+ * (same look as /play ScratchCard), with sparks at the tip.
  */
 export function WallRevealAsset({
   colorSrc,
@@ -108,16 +108,31 @@ export function WallRevealAsset({
     to: Point,
     brush: number,
   ) => {
+    const radius = brush * 0.52;
+    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    const n = Math.max(1, Math.ceil(dist / Math.max(2, radius * 0.42)));
+    const angle = Math.atan2(to.y - from.y, to.x - from.x);
     sctx.save();
     sctx.globalCompositeOperation = "destination-out";
     sctx.lineCap = "round";
     sctx.lineJoin = "round";
     sctx.strokeStyle = "rgba(0,0,0,1)";
-    sctx.lineWidth = brush;
+    sctx.fillStyle = "rgba(0,0,0,1)";
+    sctx.lineWidth = radius * 1.15;
     sctx.beginPath();
     sctx.moveTo(from.x, from.y);
     sctx.lineTo(to.x, to.y);
     sctx.stroke();
+    for (let i = 1; i <= n; i += 1) {
+      const t = i / n;
+      stampBrush(
+        sctx,
+        from.x + (to.x - from.x) * t,
+        from.y + (to.y - from.y) * t,
+        radius,
+        angle,
+      );
+    }
     sctx.restore();
   };
 
@@ -236,13 +251,40 @@ export function WallRevealAsset({
 
     const tip = lastTipRef.current;
     if (tip && scratchingRef.current) {
-      const g = ctx.createRadialGradient(tip.x, tip.y, 0, tip.x, tip.y, 14);
-      g.addColorStop(0, "rgba(255,255,255,0.9)");
-      g.addColorStop(0.35, "rgba(255,215,80,0.5)");
+      const dest = destRef.current;
+      const ring = Math.max(
+        9,
+        Math.min(dest?.w ?? 40, dest?.h ?? 40) * 0.038,
+      );
+      const g = ctx.createRadialGradient(
+        tip.x,
+        tip.y,
+        0,
+        tip.x,
+        tip.y,
+        ring * 1.85,
+      );
+      g.addColorStop(0, "rgba(255,255,255,0.92)");
+      g.addColorStop(0.32, "rgba(255,215,80,0.55)");
       g.addColorStop(1, "rgba(255,191,54,0)");
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(tip.x, tip.y, 14, 0, Math.PI * 2);
+      ctx.arc(tip.x, tip.y, ring * 1.85, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = "rgba(255,255,255,0.7)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(tip.x, tip.y, ring, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(26,115,232,0.92)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(tip.x, tip.y, ring, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(255,191,54,0.48)";
+      ctx.beginPath();
+      ctx.arc(tip.x, tip.y, ring * 0.38, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -288,6 +330,14 @@ export function WallRevealAsset({
           appliedProgressRef.current = target;
         }
         dirty = true;
+      } else if (target >= 0.999 && applied < 0.999) {
+        // Progress is already complete — don't keep brushing the leftover queue.
+        carveSlice(sctx, dest, applied, 1);
+        appliedProgressRef.current = 1;
+        jobRef.current = null;
+        lastTipRef.current = null;
+        delayUntilRef.current = 0;
+        dirty = true;
       } else if (!jobRef.current && target > applied + 0.0008) {
         if (delayUntilRef.current === 0) delayUntilRef.current = now + staggerMs;
         if (now >= delayUntilRef.current) {
@@ -301,32 +351,29 @@ export function WallRevealAsset({
           delayUntilRef.current = 0;
         }
       } else if (jobRef.current && target > jobRef.current.toProgress + 0.0008) {
-        const extra = makeScribble(
-          dest,
-          jobRef.current.toProgress,
-          target,
-          `${alt}-${target.toFixed(3)}`,
-        );
-        jobRef.current.points.push(...extra);
+        // Follow latest progress, but never enqueue more strokes.
         jobRef.current.toProgress = target;
       }
 
       const job = jobRef.current;
       if (job) {
-        const steps = Math.max(1, Math.round(dt / 8));
+        const remaining = job.points.length - job.index;
+        const catchUp = remaining > 48 || job.toProgress - applied > 0.25;
+        const steps = catchUp
+          ? remaining
+          : Math.max(1, Math.round(dt / 10));
         const brush = brushFor(dest, job.fromProgress, job.toProgress);
         for (let s = 0; s < steps && job.index < job.points.length; s += 1) {
           const from = job.points[job.index - 1]!;
           const to = job.points[job.index]!;
           carveAlong(sctx, from, to, brush);
           lastTipRef.current = to;
-          spawnSparks(sparksRef.current, to);
+          if (!catchUp) spawnSparks(sparksRef.current, to);
           job.index += 1;
         }
+        const ratio = Math.min(1, job.index / Math.max(2, job.points.length));
         appliedProgressRef.current =
-          applied +
-          (job.toProgress - applied) *
-            Math.min(1, job.index / Math.max(2, job.points.length));
+          job.fromProgress + (job.toProgress - job.fromProgress) * ratio;
         carveSlice(sctx, dest, job.fromProgress, appliedProgressRef.current);
         dirty = true;
         if (job.index >= job.points.length) {
@@ -470,11 +517,45 @@ function carveSlice(
   sctx.restore();
 }
 
-/** Lottery stroke stays inside this progress slice (1/target of the cover). */
+function stampBrush(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  angle: number,
+) {
+  ctx.beginPath();
+  ctx.ellipse(x, y, radius * 1.12, radius * 0.62, angle, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x, y, radius * 0.7, 0, Math.PI * 2);
+  ctx.fill();
+
+  const px = Math.cos(angle + Math.PI / 2);
+  const py = Math.sin(angle + Math.PI / 2);
+  const dx = Math.cos(angle);
+  const dy = Math.sin(angle);
+  for (let i = 0; i < 9; i += 1) {
+    const across = (i / 8 - 0.5) * radius * 2.15;
+    const along = ((i % 3) - 1) * radius * 0.32;
+    const r = radius * (0.16 + (i % 5) * 0.055);
+    ctx.beginPath();
+    ctx.arc(
+      x + px * across + dx * along,
+      y + py * across + dy * along,
+      r,
+      0,
+      Math.PI * 2,
+    );
+    ctx.fill();
+  }
+}
+
+/** Brush width stays inside this progress slice. */
 function brushFor(dest: Rect, fromP: number, toP: number) {
   const band = Math.max(1, dest.h * Math.max(0, toP - fromP));
-  const maxB = Math.max(7, Math.min(dest.w, dest.h) * 0.05);
-  return Math.min(maxB, Math.max(3.5, band * 0.5));
+  const maxB = Math.max(12, Math.min(dest.w, dest.h) * 0.072);
+  return Math.min(maxB, Math.max(8, band * 0.62));
 }
 
 function makeScribble(dest: Rect, fromP: number, toP: number, seedKey: string) {
@@ -482,9 +563,9 @@ function makeScribble(dest: Rect, fromP: number, toP: number, seedKey: string) {
   const yBot = dest.y + dest.h * (1 - fromP);
   const yTop = dest.y + dest.h * (1 - toP);
   const band = Math.max(1, yBot - yTop);
-  const rowGap = Math.max(5, Math.min(9, dest.h * 0.028));
-  const rows = Math.max(1, Math.round(band / rowGap));
-  const jitter = Math.min(3.5, band * 0.1);
+  const rowGap = Math.max(6, Math.min(14, dest.h * 0.045));
+  const rows = Math.max(1, Math.min(6, Math.round(band / rowGap)));
+  const jitter = Math.min(4.5, band * 0.14);
   let seed = 1;
   for (let i = 0; i < seedKey.length; i += 1) seed = (seed * 31 + seedKey.charCodeAt(i)) >>> 0;
   const rnd = () => {
@@ -501,12 +582,12 @@ function makeScribble(dest: Rect, fromP: number, toP: number, seedKey: string) {
     const goRight = r % 2 === 0;
     const start = goRight ? left : right;
     const end = goRight ? right : left;
-    const segs = 5 + Math.floor(rnd() * 4);
+    const segs = 5 + Math.floor(rnd() * 3);
     for (let s = 0; s <= segs; s += 1) {
       const u = s / segs;
       points.push({
         x: start + (end - start) * u,
-        y: y + Math.sin(u * Math.PI * 2.2) * jitter + (rnd() - 0.5) * jitter,
+        y: y + Math.sin(u * Math.PI * 2.6) * jitter + (rnd() - 0.5) * jitter,
       });
     }
   }
@@ -514,19 +595,19 @@ function makeScribble(dest: Rect, fromP: number, toP: number, seedKey: string) {
 }
 
 function spawnSparks(list: Spark[], at: Point) {
-  const n = 10 + ((Math.random() * 8) | 0);
+  const n = 8 + ((Math.random() * 6) | 0);
   for (let i = 0; i < n; i += 1) {
     const a = Math.random() * Math.PI * 2;
-    const sp = 0.7 + Math.random() * 3.2;
+    const sp = 0.9 + Math.random() * 3.6;
     const life = 220 + Math.random() * 220;
     list.push({
-      x: at.x + (Math.random() - 0.5) * 6,
-      y: at.y + (Math.random() - 0.5) * 6,
+      x: at.x + (Math.random() - 0.5) * 8,
+      y: at.y + (Math.random() - 0.5) * 8,
       vx: Math.cos(a) * sp,
-      vy: Math.sin(a) * sp - 1.4,
+      vy: Math.sin(a) * sp - 1.6,
       life,
       max: life,
-      r: 0.8 + Math.random() * 1.6,
+      r: 1.1 + Math.random() * 2.1,
     });
   }
   if (list.length > 220) list.splice(0, list.length - 220);

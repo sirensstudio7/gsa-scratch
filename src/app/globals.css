@@ -79,6 +79,7 @@ input {
 .success-line {
   display: block;
   overflow: hidden;
+  width: 100%;
 }
 
 .success-line-inner {
@@ -86,13 +87,33 @@ input {
   animation: success-line-reveal 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.success-headline {
+  width: 100%;
+  max-width: 100%;
+  /* Longest line: "Google Student Ambasador" — scale so it never overflows */
+  font-size: clamp(1rem, calc((100vw - 5rem) / 14.4), 4.25rem);
+  line-height: 1.12;
+  text-align: center;
+  color: #000;
+}
+
+.success-headline .success-line {
+  white-space: nowrap;
+}
+
 .success-fade {
   animation: success-fade-up 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .success-logo-wrap {
-  width: min(72vw, 440px);
+  width: min(58vw, 440px);
   animation: success-fade-up 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
+}
+
+@media (min-width: 640px) {
+  .success-logo-wrap {
+    width: min(72vw, 440px);
+  }
 }
 
 .success-logo-bob {
@@ -811,6 +832,37 @@ img.wall-float-piece,
 .scratch-locked {
   opacity: 0.72;
   filter: grayscale(0.15);
+}
+
+.scratch-brush {
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  width: 36px;
+  height: 36px;
+  opacity: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(26, 115, 232, 0.9);
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.55),
+    0 0 12px rgba(255, 191, 54, 0.5);
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.22) 0%,
+    rgba(255, 191, 54, 0.18) 48%,
+    transparent 72%
+  );
+  will-change: transform, opacity;
+}
+
+.scratch-brush::after {
+  content: "";
+  position: absolute;
+  inset: 30%;
+  border-radius: 50%;
+  background: rgba(255, 191, 54, 0.42);
 }
 
 .scratch-lock-overlay {

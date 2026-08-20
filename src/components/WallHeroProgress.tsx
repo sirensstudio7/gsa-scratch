@@ -19,7 +19,7 @@ const LOGO_PLACEMENT = {
 };
 
 /**
- * Same lottery-ticket scratch as hat / pencil / ribbon.
+ * Same bristle-brush scratch as hat / pencil / ribbon / books.
  * Scene = after (rainbow Gemini).
  * Cover = isolated #Team Google + white star, aligned to that scene.
  */

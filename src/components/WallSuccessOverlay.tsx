@@ -29,8 +29,8 @@ export function WallSuccessOverlay() {
             </div>
           </div>
         </div>
-        <h1 className="text-center text-[clamp(2rem,6.8vw,4.25rem)] leading-[1.12] text-black">
-          <span className="success-line whitespace-nowrap font-medium">
+        <h1 className="success-headline">
+          <span className="success-line font-medium">
             <span
               className="success-line-inner"
               style={{ animationDelay: "0.15s" }}
@@ -38,7 +38,7 @@ export function WallSuccessOverlay() {
               Selamat Atas Kelulusan
             </span>
           </span>
-          <span className="success-line whitespace-nowrap font-black">
+          <span className="success-line font-black">
             <span
               className="success-line-inner"
               style={{ animationDelay: "0.38s" }}
@@ -51,7 +51,7 @@ export function WallSuccessOverlay() {
               </span>
             </span>
           </span>
-          <span className="success-line whitespace-nowrap font-medium">
+          <span className="success-line font-medium">
             <span
               className="success-line-inner"
               style={{ animationDelay: "0.6s" }}

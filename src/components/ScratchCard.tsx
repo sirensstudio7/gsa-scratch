@@ -23,6 +23,15 @@ type ScratchCardProps = {
 };
 
 type Rect = { x: number; y: number; w: number; h: number };
+type Spark = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  max: number;
+  r: number;
+};
 
 /**
  * Layer stack (same on-screen size):
@@ -42,11 +51,15 @@ export function ScratchCard({
   const containerRef = useRef<HTMLDivElement>(null);
   const colorRef = useRef<HTMLCanvasElement>(null);
   const scratchRef = useRef<HTMLCanvasElement>(null);
+  const fxRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
   const lastPoint = useRef<{ x: number; y: number } | null>(null);
   const sampleTick = useRef(0);
   const completedRef = useRef(completed);
   const baselineOpaque = useRef(0);
+  const sparksRef = useRef<Spark[]>([]);
+  const fxRaf = useRef(0);
+  const brushElRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -57,6 +70,7 @@ export function ScratchCard({
     const container = containerRef.current;
     const colorCanvas = colorRef.current;
     const scratchCanvas = scratchRef.current;
+    const fxCanvas = fxRef.current;
     if (!container || !colorCanvas || !scratchCanvas) return;
 
     const rect = container.getBoundingClientRect();
@@ -64,12 +78,16 @@ export function ScratchCard({
     const width = Math.max(1, Math.floor(rect.width));
     const height = Math.max(1, Math.floor(rect.height));
 
-    for (const canvas of [colorCanvas, scratchCanvas]) {
+    for (const canvas of [colorCanvas, scratchCanvas, fxCanvas]) {
+      if (!canvas) continue;
       canvas.width = width * dpr;
       canvas.height = height * dpr;
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
-      const c = canvas.getContext("2d", { willReadFrequently: true });
+      const readOften = canvas !== fxCanvas;
+      const c = canvas.getContext("2d", {
+        willReadFrequently: readOften,
+      });
       if (c) c.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
@@ -123,6 +141,110 @@ export function ScratchCard({
     return () => window.removeEventListener("resize", onResize);
   }, [setup, completed]);
 
+  useEffect(() => {
+    let last = performance.now();
+    const tick = (now: number) => {
+      const dt = Math.min(48, now - last);
+      last = now;
+      const canvas = fxRef.current;
+      const ctx = canvas?.getContext("2d");
+      if (canvas && ctx) {
+        const bounds = canvas.getBoundingClientRect();
+        ctx.clearRect(0, 0, bounds.width, bounds.height);
+        const sparks = sparksRef.current;
+        for (let i = sparks.length - 1; i >= 0; i -= 1) {
+          const s = sparks[i]!;
+          s.life -= dt;
+          s.x += s.vx * (dt / 1000);
+          s.y += s.vy * (dt / 1000);
+          s.vy += 180 * (dt / 1000);
+          if (s.life <= 0) {
+            sparks.splice(i, 1);
+            continue;
+          }
+          const a = Math.max(0, s.life / s.max);
+          ctx.globalAlpha = a;
+          ctx.fillStyle = a > 0.5 ? "#fff8dc" : "#ffbf36";
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.r * (0.6 + a * 0.6), 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+      fxRaf.current = requestAnimationFrame(tick);
+    };
+    fxRaf.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(fxRaf.current);
+  }, []);
+
+  const stampBrush = (
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    radius: number,
+    angle: number,
+  ) => {
+    ctx.beginPath();
+    ctx.ellipse(x, y, radius * 1.12, radius * 0.62, angle, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x, y, radius * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+
+    const px = Math.cos(angle + Math.PI / 2);
+    const py = Math.sin(angle + Math.PI / 2);
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+    for (let i = 0; i < 9; i += 1) {
+      const across = (i / 8 - 0.5) * radius * 2.15;
+      const along = ((i % 3) - 1) * radius * 0.32;
+      const r = radius * (0.16 + (i % 5) * 0.055);
+      ctx.beginPath();
+      ctx.arc(
+        x + px * across + dx * along,
+        y + py * across + dy * along,
+        r,
+        0,
+        Math.PI * 2,
+      );
+      ctx.fill();
+    }
+  };
+
+  const moveBrush = (x: number, y: number, cardWidth: number) => {
+    const el = brushElRef.current;
+    if (!el) return;
+    const size = Math.max(28, cardWidth * 0.096);
+    el.style.width = `${size}px`;
+    el.style.height = `${size}px`;
+    el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
+    el.style.opacity = "1";
+  };
+
+  const hideBrush = () => {
+    const el = brushElRef.current;
+    if (!el) return;
+    el.style.opacity = "0";
+  };
+
+  const spawnSparks = (x: number, y: number, radius: number) => {
+    const list = sparksRef.current;
+    for (let i = 0; i < 5; i += 1) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 40 + Math.random() * 90;
+      list.push({
+        x: x + (Math.random() - 0.5) * radius,
+        y: y + (Math.random() - 0.5) * radius,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp - 30,
+        life: 180 + Math.random() * 160,
+        max: 280,
+        r: 1.2 + Math.random() * 2.2,
+      });
+    }
+    if (list.length > 80) list.splice(0, list.length - 80);
+  };
+
   const eraseAt = (clientX: number, clientY: number) => {
     const canvas = scratchRef.current;
     if (!canvas || completedRef.current) return;
@@ -132,26 +254,47 @@ export function ScratchCard({
     const bounds = canvas.getBoundingClientRect();
     const x = clientX - bounds.left;
     const y = clientY - bounds.top;
-    const radius = Math.max(22, bounds.width * 0.1);
+    const radius = Math.max(14, bounds.width * 0.048);
+    moveBrush(x, y, bounds.width);
+
+    const steps: { x: number; y: number }[] = [];
+    const prev = lastPoint.current;
+    if (prev) {
+      const dist = Math.hypot(x - prev.x, y - prev.y);
+      const n = Math.max(1, Math.ceil(dist / (radius * 0.45)));
+      for (let i = 1; i <= n; i += 1) {
+        const t = i / n;
+        steps.push({
+          x: prev.x + (x - prev.x) * t,
+          y: prev.y + (y - prev.y) * t,
+        });
+      }
+    } else {
+      steps.push({ x, y });
+    }
 
     ctx.save();
     ctx.globalCompositeOperation = "destination-out";
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.lineWidth = radius * 1.7;
-
-    if (lastPoint.current) {
+    ctx.strokeStyle = "rgba(0,0,0,1)";
+    ctx.fillStyle = "rgba(0,0,0,1)";
+    if (prev) {
+      ctx.lineWidth = radius * 1.15;
       ctx.beginPath();
-      ctx.moveTo(lastPoint.current.x, lastPoint.current.y);
+      ctx.moveTo(prev.x, prev.y);
       ctx.lineTo(x, y);
       ctx.stroke();
     }
-
-    ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.fill();
+    for (const p of steps) {
+      const angle = prev
+        ? Math.atan2(p.y - prev.y, p.x - prev.x)
+        : 0;
+      stampBrush(ctx, p.x, p.y, radius, angle);
+    }
     ctx.restore();
 
+    spawnSparks(x, y, radius);
     lastPoint.current = { x, y };
     sampleTick.current += 1;
     if (sampleTick.current % 4 === 0) checkComplete();
@@ -173,6 +316,8 @@ export function ScratchCard({
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.restore();
       }
+      sparksRef.current = [];
+      hideBrush();
       onComplete();
     }
   };
@@ -187,21 +332,29 @@ export function ScratchCard({
   };
 
   const onPointerMove = (e: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (!enabled || !drawing.current) return;
+    if (!enabled) return;
     e.preventDefault();
-    eraseAt(e.clientX, e.clientY);
+    const bounds = e.currentTarget.getBoundingClientRect();
+    moveBrush(e.clientX - bounds.left, e.clientY - bounds.top, bounds.width);
+    if (drawing.current) eraseAt(e.clientX, e.clientY);
   };
 
   const onPointerUp = (e: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (!enabled || !drawing.current) return;
-    drawing.current = false;
-    lastPoint.current = null;
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {
-      /* ignore */
+    if (!enabled) return;
+    if (drawing.current) {
+      drawing.current = false;
+      lastPoint.current = null;
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+      checkComplete();
     }
-    checkComplete();
+  };
+
+  const onPointerLeave = () => {
+    if (!drawing.current) hideBrush();
   };
 
   return (
@@ -229,14 +382,23 @@ export function ScratchCard({
           }`}
           style={{
             touchAction: "none",
-            cursor: enabled ? "crosshair" : "not-allowed",
+            cursor: enabled ? "none" : "not-allowed",
             pointerEvents: enabled ? "auto" : "none",
           }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
+          onPointerLeave={onPointerLeave}
         />
+      )}
+      <canvas
+        ref={fxRef}
+        className="pointer-events-none absolute inset-0 z-[1] h-full w-full"
+        aria-hidden
+      />
+      {enabled && !completed && (
+        <div ref={brushElRef} className="scratch-brush" aria-hidden />
       )}
       {!enabled && !completed && (
         <div className="scratch-lock-overlay" aria-hidden>
