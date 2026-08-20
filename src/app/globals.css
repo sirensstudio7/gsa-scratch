@@ -90,15 +90,23 @@ input {
 .success-headline {
   width: 100%;
   max-width: 100%;
-  /* Longest line: "Google Student Ambasador" — scale so it never overflows */
-  font-size: clamp(1rem, calc((100vw - 5rem) / 14.4), 4.25rem);
-  line-height: 1.12;
+  font-size: clamp(1.35rem, calc((100vw - 2.25rem) / 13.6), 4.25rem);
+  letter-spacing: -0.03em;
+  line-height: 1.14;
   text-align: center;
   color: #000;
 }
 
 .success-headline .success-line {
   white-space: nowrap;
+}
+
+@media (min-width: 640px) {
+  .success-headline {
+    letter-spacing: -0.01em;
+    font-size: clamp(1.85rem, calc((100vw - 5rem) / 14.4), 4.25rem);
+    line-height: 1.12;
+  }
 }
 
 .success-fade {
