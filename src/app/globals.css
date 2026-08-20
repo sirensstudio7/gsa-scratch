@@ -114,7 +114,7 @@ input {
 }
 
 .success-logo-wrap {
-  width: min(58vw, 440px);
+  width: min(88vw, 400px);
   animation: success-fade-up 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
 }
 
