@@ -2,9 +2,23 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  autoFillRemainingMs,
+  FILL_MINUTES,
+  isFillMinutes,
+  type AutoFill,
+  type FillMinutes,
+} from "@/lib/scratch-progress";
 
 const SCRATCH_SOUND_SRC = "/sounds/paper-scratch.mp3";
 const SOUND_FLAG_KEY = "gsa_wall_scratch_sound";
+
+function formatRemaining(ms: number) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 
 export default function StaffPage() {
   const [token, setToken] = useState("");
@@ -16,6 +30,8 @@ export default function StaffPage() {
   const [expectedTotal, setExpectedTotal] = useState(20);
   const [expectedDraft, setExpectedDraft] = useState("20");
   const [wallComplete, setWallComplete] = useState(false);
+  const [autoFill, setAutoFill] = useState<AutoFill | null>(null);
+  const [fillNow, setFillNow] = useState(Date.now());
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [soundOn, setSoundOn] = useState(false);
@@ -149,6 +165,16 @@ export default function StaffPage() {
         }
       }
       setWallComplete(scratch.complete === true);
+      const fill = scratch.fill as AutoFill | null;
+      if (
+        fill?.startedAt &&
+        isFillMinutes(fill.minutes) &&
+        scratch.complete !== true
+      ) {
+        setAutoFill(fill);
+      } else {
+        setAutoFill(null);
+      }
     }
   }, [playScratchSound]);
 
@@ -157,6 +183,12 @@ export default function StaffPage() {
     const t = setInterval(() => void refreshStats(), 4000);
     return () => clearInterval(t);
   }, [refreshStats]);
+
+  useEffect(() => {
+    if (!autoFill) return;
+    const t = setInterval(() => setFillNow(Date.now()), 250);
+    return () => clearInterval(t);
+  }, [autoFill]);
 
   const login = async () => {
     setLoading(true);
@@ -222,7 +254,64 @@ export default function StaffPage() {
       return;
     }
     setWallComplete(true);
+    setAutoFill(null);
     setMessage("Wall diisi penuh. Cek projector /wall.");
+  };
+
+  const startTimedFill = async (minutes: FillMinutes) => {
+    if (
+      !confirm(
+        `Isi wall penuh dalam ${minutes} menit?\n\nBuka /wall di projector. #Team Google, hat, pencil, ribbon, dan books akan terisi sendiri sampai finale.`,
+      )
+    ) {
+      return;
+    }
+    const res = await fetch("/api/scratch", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fillMinutes: minutes }),
+    });
+    if (!res.ok) {
+      setMessage("Gagal memulai isi wall.");
+      return;
+    }
+    const data = await res.json();
+    const fill = data.fill as AutoFill | null;
+    if (fill?.startedAt && isFillMinutes(fill.minutes)) {
+      setAutoFill(fill);
+      setFillNow(Date.now());
+    }
+    setWallComplete(false);
+    setMessage(`Wall mulai terisi — penuh dalam ${minutes} menit. Cek /wall.`);
+  };
+
+  const reopenWall = async () => {
+    const res = await fetch("/api/scratch", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ complete: false, stopFill: true }),
+    });
+    if (!res.ok) {
+      setMessage("Gagal membuka wall lagi.");
+      return;
+    }
+    setWallComplete(false);
+    setAutoFill(null);
+    setMessage("Wall dibuka lagi. Nama siswa tetap. 3 / 5 / 7 min siap dipakai.");
+  };
+
+  const stopTimedFill = async () => {
+    const res = await fetch("/api/scratch", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stopFill: true }),
+    });
+    if (!res.ok) {
+      setMessage("Gagal menghentikan isi wall.");
+      return;
+    }
+    setAutoFill(null);
+    setMessage("Isi wall otomatis dihentikan.");
   };
 
   const resetEvent = async () => {
@@ -446,44 +535,90 @@ export default function StaffPage() {
               <Link
                 href="/wall"
                 target="_blank"
-                className="rounded-full bg-[#1a73e8] py-3 text-center font-bold text-white"
+                className="cursor-pointer rounded-full bg-[#1a73e8] py-3 text-center font-bold text-white transition hover:bg-[#174ea6] hover:shadow-md active:scale-[0.98]"
               >
                 Open Projector Wall
               </Link>
               <button
                 type="button"
                 onClick={() => void simulate100()}
-                className="rounded-full bg-[#fbbc05] py-3 font-bold text-[#1f1f1f]"
+                className="cursor-pointer rounded-full bg-[#fbbc05] py-3 font-bold text-[#1f1f1f] transition hover:bg-[#f9ab00] hover:shadow-md active:scale-[0.98]"
               >
                 {simRunning
                   ? `Stop simulasi (${simDone}/100)`
                   : "Simulasi 100 siswa"}
               </button>
-              <button
-                type="button"
-                onClick={fillWall}
-                disabled={wallComplete}
-                className="rounded-full bg-[#34a853] py-3 font-bold text-white disabled:opacity-40"
-              >
-                {wallComplete ? "Wall sudah penuh" : "Isi wall penuh"}
-              </button>
+              <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-[#d2e3fc]">
+                <p className="text-sm font-bold text-[#1f1f1f]">
+                  Isi wall otomatis
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-[#5f6368]">
+                  Pilih durasi. Projector /wall terisi sendiri sampai penuh,
+                  lalu finale.
+                </p>
+                {autoFill ? (
+                  <div className="mt-3 space-y-2">
+                    <p className="rounded-xl bg-[#e6f4ea] px-3 py-2.5 text-sm font-semibold text-[#137333]">
+                      Berjalan {autoFill.minutes} min — sisa{" "}
+                      {formatRemaining(autoFillRemainingMs(autoFill, fillNow))}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void stopTimedFill()}
+                      className="w-full cursor-pointer rounded-full border-2 border-[#5f6368] py-2.5 text-sm font-bold text-[#3c4043] transition hover:bg-[#f1f3f4] active:scale-[0.98]"
+                    >
+                      Stop
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    {FILL_MINUTES.map((minutes) => (
+                      <button
+                        key={minutes}
+                        type="button"
+                        onClick={() => void startTimedFill(minutes)}
+                        className="cursor-pointer rounded-full bg-[#e8f0fe] py-3 text-sm font-bold text-[#1a73e8] transition hover:bg-[#d2e3fc] hover:shadow-sm active:scale-[0.98]"
+                      >
+                        {minutes} min
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {wallComplete ? (
+                <button
+                  type="button"
+                  onClick={() => void reopenWall()}
+                  className="cursor-pointer rounded-full bg-[#1a73e8] py-3 font-bold text-white transition hover:bg-[#174ea6] hover:shadow-md active:scale-[0.98]"
+                >
+                  Buka wall lagi
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={fillWall}
+                  className="cursor-pointer rounded-full bg-[#34a853] py-3 font-bold text-white transition hover:bg-[#2d8a46] hover:shadow-md active:scale-[0.98]"
+                >
+                  Isi wall penuh
+                </button>
+              )}
               <a
                 href="/api/export"
-                className="rounded-full border-2 border-[#1a73e8] py-3 text-center font-bold text-[#1a73e8]"
+                className="cursor-pointer rounded-full border-2 border-[#1a73e8] py-3 text-center font-bold text-[#1a73e8] transition hover:bg-[#e8f0fe] hover:shadow-sm active:scale-[0.98]"
               >
                 Export CSV
               </a>
               <button
                 type="button"
                 onClick={resetEvent}
-                className="rounded-full border-2 border-[#c5221f] py-3 font-bold text-[#c5221f]"
+                className="cursor-pointer rounded-full border-2 border-[#c5221f] py-3 font-bold text-[#c5221f] transition hover:bg-[#fce8e6] hover:shadow-sm active:scale-[0.98]"
               >
                 Reset Event Data
               </button>
               <button
                 type="button"
                 onClick={logout}
-                className="rounded-full py-2 text-sm font-semibold text-[#5f6368]"
+                className="cursor-pointer rounded-full py-2 text-sm font-semibold text-[#5f6368] transition hover:bg-[#f1f3f4] hover:text-[#1f1f1f]"
               >
                 Log out
               </button>

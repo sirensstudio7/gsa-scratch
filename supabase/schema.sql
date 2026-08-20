@@ -59,7 +59,9 @@ create policy "Allow public read scratch_counts"
 create table if not exists public.scratch_settings (
   id integer primary key default 1 check (id = 1),
   target integer not null default 20,
-  complete boolean not null default false
+  complete boolean not null default false,
+  fill_started_at timestamptz,
+  fill_minutes integer check (fill_minutes is null or fill_minutes in (3, 5, 7))
 );
 
 insert into public.scratch_settings (id, target, complete)

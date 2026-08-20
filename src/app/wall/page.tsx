@@ -12,8 +12,13 @@ import { StageShell } from "@/components/StageShell";
 import { WallHeroProgress } from "@/components/WallHeroProgress";
 import { WallFloatDecor } from "@/components/WallFloatDecor";
 import { WallSuccessOverlay } from "@/components/WallSuccessOverlay";
-import { type Participant } from "@/lib/types";
+import { type Participant, type ScratchId } from "@/lib/types";
 import { isSupabaseConfigured, getSupabaseBrowser } from "@/lib/supabase";
+import {
+  autoFillProgress,
+  isFillMinutes,
+  type AutoFill,
+} from "@/lib/scratch-progress";
 
 const WALL_NAME_ACCENTS = ["#4285f4", "#ea4335", "#fbbc05", "#34a853"] as const;
 const TOAST_VISIBLE_MS = 5000;
@@ -41,17 +46,62 @@ function genderAvatarSrc(gender: string) {
   return null;
 }
 
+function sameFill(a: AutoFill | null, b: AutoFill | null) {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return a.startedAt === b.startedAt && a.minutes === b.minutes;
+}
+
+function readAutoFill(scratch: {
+  complete?: boolean;
+  fill?: { startedAt?: string; minutes?: number } | null;
+}): AutoFill | null {
+  if (scratch.complete === true) return null;
+  const fill = scratch.fill;
+  if (!fill?.startedAt || !isFillMinutes(fill.minutes)) return null;
+  return { startedAt: fill.startedAt, minutes: fill.minutes };
+}
+
+function readAssetProgress(scratch: {
+  complete?: boolean;
+  progress?: Partial<Record<ScratchId, number>>;
+}): Record<ScratchId, number> {
+  if (scratch.complete === true) {
+    return { hat: 1, pencil: 1, ribbon: 1 };
+  }
+  const next = { hat: 0, pencil: 0, ribbon: 0 };
+  for (const id of ["hat", "pencil", "ribbon"] as const) {
+    const n = Number(scratch.progress?.[id]);
+    next[id] = Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0;
+  }
+  return next;
+}
+
 export default function WallPage() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [toasts, setToasts] = useState<WallToast[]>([]);
   const [target, setTarget] = useState(20);
   const [forceComplete, setForceComplete] = useState(false);
+  const [assetProgress, setAssetProgress] = useState<Record<ScratchId, number>>({
+    hat: 0,
+    pencil: 0,
+    ribbon: 0,
+  });
+  const [autoFill, setAutoFill] = useState<AutoFill | null>(null);
   const [displayProgress, setDisplayProgress] = useState(0);
   const seenIds = useRef(new Set<string>());
   const accentTick = useRef(0);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>[]>());
   const displayProgressRef = useRef(0);
+  const prevAssetProgress = useRef(assetProgress);
   const animRaf = useRef(0);
+  const autoFillRaf = useRef(0);
+  const autoFillRef = useRef<AutoFill | null>(null);
+  const submitCountRef = useRef(0);
+  const targetRef = useRef(20);
+  autoFillRef.current = autoFill;
+  submitCountRef.current = participants.length;
+  targetRef.current = target;
   const [hydrated, setHydrated] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const didHydrateSnap = useRef(false);
@@ -60,21 +110,24 @@ export default function WallPage() {
   const soundEnabledRef = useRef(false);
   const audioUnlockedRef = useRef(false);
 
-  /** White → color for #Team Google, hat, pencil, and ribbon = submits / staff target. */
+  /** #Team Google + Gemini scratch when a student hits Submit, or timed staff fill. */
   const revealProgress = useMemo(() => {
     if (forceComplete) return 1;
-    if (target <= 0) return 0;
-    return Math.min(1, participants.length / target);
-  }, [forceComplete, participants.length, target]);
+    const submit =
+      target <= 0 ? 0 : Math.min(1, participants.length / target);
+    return Math.max(submit, autoFillProgress(autoFill));
+  }, [forceComplete, participants.length, target, autoFill]);
 
-  const floatProgress = useMemo(
-    () => ({
-      hat: revealProgress,
-      pencil: revealProgress,
-      ribbon: revealProgress,
-    }),
-    [revealProgress],
-  );
+  /** Hat / pencil / ribbon / books: green-check counts, or the timed staff fill. */
+  const floatProgress = useMemo(() => {
+    if (forceComplete) return { hat: 1, pencil: 1, ribbon: 1 };
+    if (!autoFill) return assetProgress;
+    return {
+      hat: Math.max(assetProgress.hat, displayProgress),
+      pencil: Math.max(assetProgress.pencil, displayProgress),
+      ribbon: Math.max(assetProgress.ribbon, displayProgress),
+    };
+  }, [forceComplete, autoFill, assetProgress, displayProgress]);
 
   useEffect(() => {
     const audio = new Audio(SCRATCH_SOUND_SRC);
@@ -201,6 +254,7 @@ export default function WallPage() {
   /** Animate wipe whenever fill increases (after initial load). */
   useEffect(() => {
     if (!hydrated) return;
+    if (autoFill) return;
 
     const from = displayProgressRef.current;
     const to = revealProgress;
@@ -246,7 +300,48 @@ export default function WallPage() {
 
     animRaf.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animRaf.current);
-  }, [revealProgress, hydrated, playScratchSound]);
+  }, [revealProgress, hydrated, playScratchSound, autoFill]);
+
+  useEffect(() => {
+    if (!hydrated || !autoFill) return;
+    cancelAnimationFrame(animRaf.current);
+    cancelAnimationFrame(autoFillRaf.current);
+    let lastBand = Math.floor(displayProgressRef.current / 0.04);
+    const tick = () => {
+      const targetNow = targetRef.current;
+      const submit =
+        targetNow <= 0
+          ? 0
+          : Math.min(1, submitCountRef.current / targetNow);
+      const next = Math.max(submit, autoFillProgress(autoFillRef.current));
+      displayProgressRef.current = next;
+      setDisplayProgress(next);
+      const band = Math.floor(next / 0.04);
+      if (band > lastBand) {
+        lastBand = band;
+        playScratchSound();
+      }
+      if (next < 1 && autoFillRef.current) {
+        autoFillRaf.current = requestAnimationFrame(tick);
+      }
+    };
+    autoFillRaf.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(autoFillRaf.current);
+  }, [autoFill, hydrated, playScratchSound]);
+
+  useEffect(() => {
+    if (!hydrated) {
+      prevAssetProgress.current = assetProgress;
+      return;
+    }
+    const prev = prevAssetProgress.current;
+    const rose =
+      assetProgress.hat > prev.hat + 0.0005 ||
+      assetProgress.pencil > prev.pencil + 0.0005 ||
+      assetProgress.ribbon > prev.ribbon + 0.0005;
+    prevAssetProgress.current = assetProgress;
+    if (rose) playScratchSound();
+  }, [assetProgress, hydrated, playScratchSound]);
 
   /** After the wipe finishes at 100%, show the wall success finale. */
   useEffect(() => {
@@ -317,6 +412,11 @@ export default function WallPage() {
         setTarget(scratch.target);
       }
       setForceComplete(scratch.complete === true);
+      setAssetProgress(readAssetProgress(scratch));
+      setAutoFill((prev) => {
+        const next = readAutoFill(scratch);
+        return sameFill(prev, next) ? prev : next;
+      });
       setHydrated(true);
 
       pollTimer = setInterval(async () => {
@@ -336,6 +436,11 @@ export default function WallPage() {
             setTarget(dScratch.target);
           }
           setForceComplete(dScratch.complete === true);
+          setAssetProgress(readAssetProgress(dScratch));
+          setAutoFill((prev) => {
+            const nextFill = readAutoFill(dScratch);
+            return sameFill(prev, nextFill) ? prev : nextFill;
+          });
         } catch {
           /* ignore */
         }
@@ -378,7 +483,7 @@ export default function WallPage() {
   }, [mergeParticipant, pushToast]);
 
   return (
-    <StageShell showTeamMark={showSuccess}>
+    <StageShell showTeamMark={false}>
       <div className="relative z-0 flex min-h-0 flex-1 items-center justify-center px-10 pb-8 pt-4">
         <div
           className={`wall-scratch-stage relative flex w-full max-w-7xl items-center justify-center transition-opacity duration-700 ${
@@ -386,7 +491,7 @@ export default function WallPage() {
           }`}
         >
           <div className="relative">
-            <WallHeroProgress progress={revealProgress} />
+            <WallHeroProgress progress={displayProgress} />
             <WallFloatDecor progress={floatProgress} />
           </div>
         </div>

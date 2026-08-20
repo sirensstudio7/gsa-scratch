@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { SuccessConfetti } from "@/components/SuccessConfetti";
 import { SuccessFireworks } from "@/components/SuccessFireworks";
 
@@ -10,8 +11,25 @@ export function WallSuccessOverlay() {
       <SuccessFireworks />
       <SuccessConfetti />
 
-      <div className="font-google-sans relative z-30 w-full max-w-6xl px-2">
-        <h1 className="text-[clamp(2rem,6.8vw,4.25rem)] leading-[1.12] text-black">
+      <div className="font-google-sans relative z-30 flex w-full max-w-6xl flex-col items-center px-2">
+        <div className="absolute bottom-full left-1/2 mb-5 -translate-x-1/2 sm:mb-6">
+          <div className="success-logo-wrap">
+            <div className="success-logo-bob">
+              <Image
+                src="/assets/tg-logo-hero-v2.png"
+                alt="#Team Google — Google Student Ambassador Graduation Event"
+                width={1024}
+                height={605}
+                className="success-logo-main h-auto w-full bg-transparent object-contain"
+                priority
+              />
+              <span className="success-logo-shine" aria-hidden>
+                <span className="hero-shine-beam" />
+              </span>
+            </div>
+          </div>
+        </div>
+        <h1 className="text-center text-[clamp(2rem,6.8vw,4.25rem)] leading-[1.12] text-black">
           <span className="success-line whitespace-nowrap font-medium">
             <span
               className="success-line-inner"

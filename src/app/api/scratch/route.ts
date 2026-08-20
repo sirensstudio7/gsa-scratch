@@ -1,16 +1,22 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import {
+  autoFillProgress,
   claimMemoryScratch,
   emptyCounts,
+  getAutoFill,
   getForceComplete,
   getMemoryScratchProgress,
   getRevealTarget,
+  isFillMinutes,
   isScratchId,
   SCRATCH_IDS,
+  setAutoFill,
   setForceComplete,
   setRevealTarget,
+  startAutoFill,
   toProgressPayload,
+  type AutoFill,
   type ScratchCounts,
 } from "@/lib/scratch-progress";
 import { isMemoryMode } from "@/lib/memory-store";
@@ -39,11 +45,25 @@ async function readSupabaseCounts(): Promise<ScratchCounts> {
   return counts;
 }
 
-async function readSupabaseSettings() {
+type SettingsRow = {
+  target: number;
+  complete: boolean;
+  fill: AutoFill | null;
+};
+
+function parseFill(row: {
+  fill_started_at?: string | null;
+  fill_minutes?: number | null;
+}): AutoFill | null {
+  if (!row.fill_started_at || !isFillMinutes(row.fill_minutes)) return null;
+  return { startedAt: row.fill_started_at, minutes: row.fill_minutes };
+}
+
+async function readSupabaseSettings(): Promise<SettingsRow | null> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("scratch_settings")
-    .select("target, complete")
+    .select("target, complete, fill_started_at, fill_minutes")
     .eq("id", 1)
     .maybeSingle();
   if (error) throw error;
@@ -52,21 +72,30 @@ async function readSupabaseSettings() {
   return {
     target: Number.isFinite(target) && target > 0 ? Math.floor(target) : 20,
     complete: data.complete === true,
+    fill: parseFill(data),
   };
 }
 
 async function writeSupabaseSettings(patch: {
   target?: number;
   complete?: boolean;
+  fill?: AutoFill | null;
 }) {
   const current = (await readSupabaseSettings()) ?? {
     target: getRevealTarget(),
     complete: getForceComplete(),
+    fill: getAutoFill(),
   };
+  const nextFill =
+    patch.fill === undefined
+      ? current.fill
+      : patch.fill;
   const next = {
     id: 1,
     target: patch.target ?? current.target,
     complete: patch.complete ?? current.complete,
+    fill_started_at: nextFill?.startedAt ?? null,
+    fill_minutes: nextFill?.minutes ?? null,
   };
   const { error } = await getSupabaseAdmin()
     .from("scratch_settings")
@@ -74,6 +103,7 @@ async function writeSupabaseSettings(patch: {
   if (error) throw error;
   setRevealTarget(next.target);
   setForceComplete(next.complete);
+  setAutoFill(next.complete ? null : nextFill);
   return next;
 }
 
@@ -90,10 +120,23 @@ async function fillSupabaseAssets(target: number) {
   }
 }
 
-function applySettings(settings: { target: number; complete: boolean } | null) {
+function applySettings(settings: SettingsRow | null) {
   if (!settings) return;
   setRevealTarget(settings.target);
   setForceComplete(settings.complete);
+  setAutoFill(settings.complete ? null : settings.fill);
+}
+
+async function settleSupabaseFill(settings: SettingsRow) {
+  if (settings.complete || !settings.fill) return settings;
+  if (autoFillProgress(settings.fill) < 1) return settings;
+  await writeSupabaseSettings({ complete: true, fill: null });
+  await fillSupabaseAssets(getRevealTarget());
+  return {
+    target: settings.target,
+    complete: true,
+    fill: null,
+  };
 }
 
 export async function GET() {
@@ -106,10 +149,13 @@ export async function GET() {
     }
 
     try {
-      const [counts, settings] = await Promise.all([
+      const [counts, rawSettings] = await Promise.all([
         readSupabaseCounts(),
         readSupabaseSettings(),
       ]);
+      const settings = rawSettings
+        ? await settleSupabaseFill(rawSettings)
+        : null;
       applySettings(settings);
       return NextResponse.json({
         ...toProgressPayload(counts),
@@ -138,9 +184,10 @@ export async function PATCH(request: Request) {
 
   if (body?.complete === true) {
     setForceComplete(true);
+    setAutoFill(null);
     if (!isMemoryMode()) {
       try {
-        await writeSupabaseSettings({ complete: true });
+        await writeSupabaseSettings({ complete: true, fill: null });
         await fillSupabaseAssets(getRevealTarget());
         const counts = await readSupabaseCounts();
         return NextResponse.json({
@@ -160,11 +207,52 @@ export async function PATCH(request: Request) {
 
   if (body?.complete === false) {
     setForceComplete(false);
+    setAutoFill(null);
     if (!isMemoryMode()) {
       try {
-        await writeSupabaseSettings({ complete: false });
+        await writeSupabaseSettings({ complete: false, fill: null });
       } catch (err) {
         console.error("scratch PATCH incomplete supabase fallback", err);
+      }
+    }
+    return NextResponse.json({
+      success: true,
+      ...getMemoryScratchProgress(),
+    });
+  }
+
+  if (body?.fillMinutes === null || body?.stopFill === true) {
+    setAutoFill(null);
+    if (!isMemoryMode()) {
+      try {
+        await writeSupabaseSettings({ fill: null });
+      } catch (err) {
+        console.error("scratch PATCH stop fill supabase fallback", err);
+      }
+    }
+    return NextResponse.json({
+      success: true,
+      ...getMemoryScratchProgress(),
+    });
+  }
+
+  if (body?.fillMinutes != null) {
+    if (!isFillMinutes(body.fillMinutes)) {
+      return NextResponse.json(
+        { error: "fillMinutes must be 3, 5, or 7" },
+        { status: 400 },
+      );
+    }
+    const fill = startAutoFill(body.fillMinutes);
+    if (!isMemoryMode()) {
+      try {
+        await writeSupabaseSettings({ complete: false, fill });
+      } catch (err) {
+        console.error("scratch PATCH fill supabase fallback", err);
+        return NextResponse.json(
+          { error: "Gagal memulai isi wall" },
+          { status: 500 },
+        );
       }
     }
     return NextResponse.json({

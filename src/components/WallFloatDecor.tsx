@@ -20,11 +20,10 @@ const FLOAT_OBJECTS: { id: ScratchId; className: string }[] = [
   },
 ];
 
+/** Yellow books use the same submit/target fill as the hat. */
+const BOOK_FOLLOW: ScratchId = "hat";
+
 const EXTRAS = [
-  {
-    src: "/assets/wall-float-books.png",
-    className: "wall-float-piece wall-float-piece--books",
-  },
   {
     src: "/assets/wall-float-stars-gold.png",
     className: "wall-float-piece wall-float-piece--stars-gold",
@@ -76,17 +75,31 @@ export function WallFloatDecor({ progress }: WallFloatDecorProps) {
         if (!obj) return null;
         return (
           <div key={piece.id} className={piece.className}>
-            <WallRevealAsset
-              colorSrc={obj.colorSrc}
-              whiteSrc={obj.maskSrc}
-              alt={obj.label}
-              progress={progress[piece.id]}
-              boxed={false}
-              className="wall-float-reveal"
-            />
+            <div className="wall-float-motion">
+              <WallRevealAsset
+                colorSrc={obj.colorSrc}
+                whiteSrc={obj.maskSrc}
+                alt={obj.label}
+                progress={progress[piece.id]}
+                boxed={false}
+                className="wall-float-reveal"
+              />
+            </div>
           </div>
         );
       })}
+      <div className="wall-float-piece wall-float-piece--books">
+        <div className="wall-float-motion">
+          <WallRevealAsset
+            colorSrc="/assets/book-color.png"
+            whiteSrc="/assets/book-white.png"
+            alt="Books"
+            progress={progress[BOOK_FOLLOW]}
+            boxed={false}
+            className="wall-float-reveal"
+          />
+        </div>
+      </div>
       {EXTRAS.map((piece) => (
         <img
           key={piece.className}

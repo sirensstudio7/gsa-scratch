@@ -1,8 +1,15 @@
 import type { ScratchId } from "@/lib/types";
 
 export const SCRATCH_IDS: ScratchId[] = ["hat", "pencil", "ribbon"];
+export const FILL_MINUTES = [3, 5, 7] as const;
+export type FillMinutes = (typeof FILL_MINUTES)[number];
 
 export type ScratchCounts = Record<ScratchId, number>;
+
+export type AutoFill = {
+  startedAt: string;
+  minutes: FillMinutes;
+};
 
 export type ScratchProgress = {
   counts: ScratchCounts;
@@ -10,6 +17,7 @@ export type ScratchProgress = {
   progress: Record<ScratchId, number>;
   fullyRevealed: boolean;
   complete: boolean;
+  fill: AutoFill | null;
 };
 
 type GlobalScratch = {
@@ -17,6 +25,7 @@ type GlobalScratch = {
   __gsaScratchClaims?: Set<string>;
   __gsaRevealTarget?: number;
   __gsaForceComplete?: boolean;
+  __gsaAutoFill?: AutoFill | null;
 };
 
 function scratchStore() {
@@ -31,6 +40,51 @@ function scratchStore() {
     counts: g.__gsaScratchCounts,
     claims: g.__gsaScratchClaims,
   };
+}
+
+export function isFillMinutes(value: unknown): value is FillMinutes {
+  return value === 3 || value === 5 || value === 7;
+}
+
+export function getAutoFill(): AutoFill | null {
+  return (globalThis as typeof globalThis & GlobalScratch).__gsaAutoFill ?? null;
+}
+
+export function setAutoFill(value: AutoFill | null) {
+  const g = globalThis as typeof globalThis & GlobalScratch;
+  g.__gsaAutoFill = value;
+  return g.__gsaAutoFill ?? null;
+}
+
+export function startAutoFill(minutes: FillMinutes): AutoFill {
+  const next: AutoFill = {
+    startedAt: new Date().toISOString(),
+    minutes,
+  };
+  setForceComplete(false);
+  return setAutoFill(next) as AutoFill;
+}
+
+export function autoFillProgress(
+  fill: AutoFill | null,
+  now = Date.now(),
+): number {
+  if (!fill) return 0;
+  const start = Date.parse(fill.startedAt);
+  if (!Number.isFinite(start)) return 0;
+  const duration = fill.minutes * 60_000;
+  if (duration <= 0) return 1;
+  return Math.max(0, Math.min(1, (now - start) / duration));
+}
+
+export function autoFillRemainingMs(
+  fill: AutoFill | null,
+  now = Date.now(),
+): number {
+  if (!fill) return 0;
+  const start = Date.parse(fill.startedAt);
+  if (!Number.isFinite(start)) return 0;
+  return Math.max(0, fill.minutes * 60_000 - (now - start));
 }
 
 export function getRevealTarget() {
@@ -58,6 +112,7 @@ export function getForceComplete() {
 export function setForceComplete(value: boolean) {
   const g = globalThis as typeof globalThis & GlobalScratch;
   g.__gsaForceComplete = value;
+  if (value) g.__gsaAutoFill = null;
   return g.__gsaForceComplete;
 }
 
@@ -65,13 +120,24 @@ export function emptyCounts(): ScratchCounts {
   return { hat: 0, pencil: 0, ribbon: 0 };
 }
 
+function settleExpiredFill() {
+  const fill = getAutoFill();
+  if (fill && autoFillProgress(fill) >= 1) {
+    setForceComplete(true);
+    setAutoFill(null);
+  }
+}
+
 export function toProgressPayload(counts: ScratchCounts): ScratchProgress {
+  settleExpiredFill();
   const target = getRevealTarget();
   const complete = getForceComplete();
+  const fill = complete ? null : getAutoFill();
+  const timed = autoFillProgress(fill);
   const progress = {
-    hat: complete ? 1 : Math.min(1, counts.hat / target),
-    pencil: complete ? 1 : Math.min(1, counts.pencil / target),
-    ribbon: complete ? 1 : Math.min(1, counts.ribbon / target),
+    hat: complete ? 1 : Math.min(1, Math.max(counts.hat / target, timed)),
+    pencil: complete ? 1 : Math.min(1, Math.max(counts.pencil / target, timed)),
+    ribbon: complete ? 1 : Math.min(1, Math.max(counts.ribbon / target, timed)),
   };
   return {
     counts,
@@ -81,6 +147,7 @@ export function toProgressPayload(counts: ScratchCounts): ScratchProgress {
       complete ||
       (progress.hat >= 1 && progress.pencil >= 1 && progress.ribbon >= 1),
     complete,
+    fill,
   };
 }
 
@@ -108,6 +175,7 @@ export function clearMemoryScratchProgress() {
   g.__gsaScratchCounts = { hat: 0, pencil: 0, ribbon: 0 };
   g.__gsaScratchClaims = new Set();
   g.__gsaForceComplete = false;
+  g.__gsaAutoFill = null;
 }
 
 export function isScratchId(value: unknown): value is ScratchId {
