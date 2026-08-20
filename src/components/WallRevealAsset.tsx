@@ -31,10 +31,14 @@ type Job = {
   toProgress: number;
 };
 
+const BRUSH_SRC = "/assets/scratch-brush.png";
+const DEMO_SIZE = 300;
+const DEMO_OFFSET = 25;
+
 /**
  * Color underneath. White on top.
- * When progress rises, a bristle brush carves color through
- * (same look as /play ScratchCard), with sparks at the tip.
+ * When progress rises, the same scratchie.js coin brush as /play
+ * carves color through, with sparks at the tip.
  */
 export function WallRevealAsset({
   colorSrc,
@@ -70,6 +74,7 @@ export function WallRevealAsset({
   const delayUntilRef = useRef(0);
   const staggerMs = hashDelay(alt);
   const scratchingRef = useRef(false);
+  const brushRef = useRef<HTMLImageElement | null>(null);
 
   targetProgressRef.current = Math.max(0, Math.min(1, progress));
 
@@ -106,32 +111,33 @@ export function WallRevealAsset({
     sctx: CanvasRenderingContext2D,
     from: Point,
     to: Point,
-    brush: number,
   ) => {
-    const radius = brush * 0.52;
-    const dist = Math.hypot(to.x - from.x, to.y - from.y);
-    const n = Math.max(1, Math.ceil(dist / Math.max(2, radius * 0.42)));
-    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+    const brush = brushRef.current;
+    const dest = destRef.current;
     sctx.save();
     sctx.globalCompositeOperation = "destination-out";
-    sctx.lineCap = "round";
-    sctx.lineJoin = "round";
-    sctx.strokeStyle = "rgba(0,0,0,1)";
-    sctx.fillStyle = "rgba(0,0,0,1)";
-    sctx.lineWidth = radius * 1.15;
-    sctx.beginPath();
-    sctx.moveTo(from.x, from.y);
-    sctx.lineTo(to.x, to.y);
-    sctx.stroke();
-    for (let i = 1; i <= n; i += 1) {
-      const t = i / n;
-      stampBrush(
-        sctx,
-        from.x + (to.x - from.x) * t,
-        from.y + (to.y - from.y) * t,
-        radius,
-        angle,
-      );
+    if (!brush) {
+      sctx.lineCap = "round";
+      sctx.lineWidth = 18;
+      sctx.beginPath();
+      sctx.moveTo(from.x, from.y);
+      sctx.lineTo(to.x, to.y);
+      sctx.stroke();
+      sctx.restore();
+      return;
+    }
+    const basis = dest ? Math.min(dest.w, dest.h) : DEMO_SIZE;
+    const scale = Math.min(1.15, Math.max(0.7, basis / DEMO_SIZE));
+    const bw = brush.naturalWidth * scale;
+    const bh = brush.naturalHeight * scale;
+    const ox = DEMO_OFFSET * scale;
+    const oy = DEMO_OFFSET * scale;
+    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    const angle = Math.atan2(to.x - from.x, to.y - from.y);
+    for (let i = 0; i < dist; i += 1) {
+      const x = from.x + Math.sin(angle) * i - ox;
+      const y = from.y + Math.cos(angle) * i - oy;
+      sctx.drawImage(brush, x, y, bw, bh);
     }
     sctx.restore();
   };
@@ -144,9 +150,8 @@ export function WallRevealAsset({
   ) => {
     const path = makeScribble(dest, fromP, toP, alt);
     if (path.length >= 2) {
-      const brush = brushFor(dest, fromP, toP);
       for (let i = 1; i < path.length; i += 1) {
-        carveAlong(sctx, path[i - 1]!, path[i]!, brush);
+        carveAlong(sctx, path[i - 1]!, path[i]!);
       }
     }
     carveSlice(sctx, dest, fromP, toP);
@@ -362,11 +367,10 @@ export function WallRevealAsset({
         const steps = catchUp
           ? remaining
           : Math.max(1, Math.round(dt / 10));
-        const brush = brushFor(dest, job.fromProgress, job.toProgress);
         for (let s = 0; s < steps && job.index < job.points.length; s += 1) {
           const from = job.points[job.index - 1]!;
           const to = job.points[job.index]!;
-          carveAlong(sctx, from, to, brush);
+          carveAlong(sctx, from, to);
           lastTipRef.current = to;
           if (!catchUp) spawnSparks(sparksRef.current, to);
           job.index += 1;
@@ -374,7 +378,6 @@ export function WallRevealAsset({
         const ratio = Math.min(1, job.index / Math.max(2, job.points.length));
         appliedProgressRef.current =
           job.fromProgress + (job.toProgress - job.fromProgress) * ratio;
-        carveSlice(sctx, dest, job.fromProgress, appliedProgressRef.current);
         dirty = true;
         if (job.index >= job.points.length) {
           carveSlice(sctx, dest, job.fromProgress, job.toProgress);
@@ -412,11 +415,13 @@ export function WallRevealAsset({
 
     async function setup() {
       try {
-        const [color, white] = await Promise.all([
+        const [color, white, brush] = await Promise.all([
           loadImage(colorSrc),
           loadImage(whiteSrc),
+          loadImage(BRUSH_SRC),
         ]);
         if (cancelled) return;
+        brushRef.current = brush;
         imgsRef.current = {
           color,
           white,
@@ -515,47 +520,6 @@ function carveSlice(
   sctx.fillStyle = "#000";
   sctx.fillRect(dest.x - 2, yTop, dest.w + 4, h);
   sctx.restore();
-}
-
-function stampBrush(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  radius: number,
-  angle: number,
-) {
-  ctx.beginPath();
-  ctx.ellipse(x, y, radius * 1.12, radius * 0.62, angle, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(x, y, radius * 0.7, 0, Math.PI * 2);
-  ctx.fill();
-
-  const px = Math.cos(angle + Math.PI / 2);
-  const py = Math.sin(angle + Math.PI / 2);
-  const dx = Math.cos(angle);
-  const dy = Math.sin(angle);
-  for (let i = 0; i < 9; i += 1) {
-    const across = (i / 8 - 0.5) * radius * 2.15;
-    const along = ((i % 3) - 1) * radius * 0.32;
-    const r = radius * (0.16 + (i % 5) * 0.055);
-    ctx.beginPath();
-    ctx.arc(
-      x + px * across + dx * along,
-      y + py * across + dy * along,
-      r,
-      0,
-      Math.PI * 2,
-    );
-    ctx.fill();
-  }
-}
-
-/** Brush width stays inside this progress slice. */
-function brushFor(dest: Rect, fromP: number, toP: number) {
-  const band = Math.max(1, dest.h * Math.max(0, toP - fromP));
-  const maxB = Math.max(12, Math.min(dest.w, dest.h) * 0.072);
-  return Math.min(maxB, Math.max(8, band * 0.62));
 }
 
 function makeScribble(dest: Rect, fromP: number, toP: number, seedKey: string) {

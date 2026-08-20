@@ -848,19 +848,19 @@ img.wall-float-piece,
   left: 0;
   top: 0;
   z-index: 3;
-  width: 36px;
-  height: 36px;
+  width: 72px;
+  height: 44px;
   opacity: 0;
   border-radius: 50%;
-  border: 2px solid rgba(26, 115, 232, 0.9);
+  border: 2px solid rgba(26, 115, 232, 0.78);
   box-shadow:
-    0 0 0 3px rgba(255, 255, 255, 0.55),
-    0 0 12px rgba(255, 191, 54, 0.5);
+    0 0 0 2px rgba(255, 255, 255, 0.45),
+    0 0 10px rgba(255, 191, 54, 0.4);
   background: radial-gradient(
-    circle,
-    rgba(255, 255, 255, 0.22) 0%,
-    rgba(255, 191, 54, 0.18) 48%,
-    transparent 72%
+    ellipse at 42% 40%,
+    rgba(255, 255, 255, 0.28) 0%,
+    rgba(255, 191, 54, 0.16) 46%,
+    transparent 74%
   );
   will-change: transform, opacity;
 }
@@ -868,9 +868,9 @@ img.wall-float-piece,
 .scratch-brush::after {
   content: "";
   position: absolute;
-  inset: 30%;
+  inset: 34% 28%;
   border-radius: 50%;
-  background: rgba(255, 191, 54, 0.42);
+  background: rgba(255, 191, 54, 0.38);
 }
 
 .scratch-lock-overlay {
