@@ -19,9 +19,10 @@ const LOGO_PLACEMENT = {
 };
 
 /**
- * Same bristle-brush scratch as hat / pencil / ribbon / books.
+ * Same coin-brush scratch as hat / pencil / ribbon / books.
  * Scene = after (rainbow Gemini).
  * Cover = isolated #Team Google + white star, aligned to that scene.
+ * Fill is submits / staff target (equal slices, clipped so 1/5 cannot look like 1/2).
  */
 export function WallHeroProgress({
   progress,

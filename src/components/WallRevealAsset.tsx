@@ -34,6 +34,8 @@ type Job = {
 const BRUSH_SRC = "/assets/scratch-brush.png";
 const DEMO_SIZE = 300;
 const DEMO_OFFSET = 25;
+/** Cap hero stamp size so one slice cannot cover half the logo. */
+const HERO_BRUSH_REF = 160;
 
 /**
  * Color underneath. White on top.
@@ -51,6 +53,7 @@ export function WallRevealAsset({
   scratchFocus,
   coverPlacement,
 }: WallRevealAssetProps) {
+  const isHero = Boolean(coverPlacement);
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scratchRef = useRef<HTMLCanvasElement | null>(null);
@@ -115,6 +118,10 @@ export function WallRevealAsset({
     const brush = brushRef.current;
     const dest = destRef.current;
     sctx.save();
+    if (isHero && dest) {
+      // Never reveal above the current submit/target fraction (1/5, 2/5, …).
+      clipToProgress(sctx, dest, targetProgressRef.current);
+    }
     sctx.globalCompositeOperation = "destination-out";
     if (!brush) {
       sctx.lineCap = "round";
@@ -126,8 +133,11 @@ export function WallRevealAsset({
       sctx.restore();
       return;
     }
-    // Same stamp as /play ScratchCard: dest width vs the 300px scratchie demo.
-    const scale = (dest?.w ?? DEMO_SIZE) / DEMO_SIZE;
+    const scale = dest
+      ? isHero
+        ? heroStampScale(dest, brush)
+        : dest.w / DEMO_SIZE
+      : 1;
     const bw = brush.naturalWidth * scale;
     const bh = brush.naturalHeight * scale;
     const ox = DEMO_OFFSET * scale;
@@ -160,7 +170,19 @@ export function WallRevealAsset({
       }
     }
     if (toP >= 0.999) carveSlice(sctx, dest, fromP, toP);
-    else floodBandWithBrush(sctx, dest, fromP, toP, brushRef.current);
+    else {
+      floodBandWithBrush(
+        sctx,
+        dest,
+        fromP,
+        toP,
+        brushRef.current,
+        isHero && brushRef.current
+          ? heroStampScale(dest, brushRef.current)
+          : undefined,
+        isHero,
+      );
+    }
   };
 
   const paint = useCallback(() => {
@@ -263,7 +285,11 @@ export function WallRevealAsset({
     const tip = lastTipRef.current;
     if (tip && scratchingRef.current) {
       const dest = destRef.current;
-      const scale = (dest?.w ?? DEMO_SIZE) / DEMO_SIZE;
+      const scale = dest
+        ? isHero && brushRef.current
+          ? heroStampScale(dest, brushRef.current)
+          : dest.w / DEMO_SIZE
+        : 1;
       const glow = Math.max(10, DEMO_OFFSET * scale * 0.7);
       const g = ctx.createRadialGradient(
         tip.x,
@@ -325,7 +351,6 @@ export function WallRevealAsset({
         }
         dirty = true;
       } else if (target >= 0.999 && applied < 0.999) {
-        // Progress is already complete — don't keep brushing the leftover queue.
         carveSlice(sctx, dest, applied, 1);
         appliedProgressRef.current = 1;
         jobRef.current = null;
@@ -345,17 +370,28 @@ export function WallRevealAsset({
           delayUntilRef.current = 0;
         }
       } else if (jobRef.current && target > jobRef.current.toProgress + 0.0008) {
-        // Follow latest progress, but never enqueue more strokes.
-        jobRef.current.toProgress = target;
+        const job = jobRef.current;
+        if (isHero) {
+          job.points.push(
+            ...makeScribble(
+              dest,
+              job.toProgress,
+              target,
+              `${alt}-${target.toFixed(3)}`,
+            ),
+          );
+        }
+        job.toProgress = target;
       }
 
       const job = jobRef.current;
       if (job) {
         const remaining = job.points.length - job.index;
-        const catchUp = remaining > 48 || job.toProgress - applied > 0.25;
+        const catchUp =
+          !isHero && (remaining > 48 || job.toProgress - applied > 0.25);
         const steps = catchUp
           ? remaining
-          : Math.max(1, Math.round(dt / 10));
+          : Math.max(1, Math.round(dt / (isHero ? 14 : 10)));
         for (let s = 0; s < steps && job.index < job.points.length; s += 1) {
           const from = job.points[job.index - 1]!;
           const to = job.points[job.index]!;
@@ -375,6 +411,10 @@ export function WallRevealAsset({
             job.fromProgress,
             job.toProgress,
             brushRef.current,
+            isHero && brushRef.current
+              ? heroStampScale(dest, brushRef.current)
+              : undefined,
+            isHero,
           );
           appliedProgressRef.current = job.toProgress;
           jobRef.current = null;
@@ -403,7 +443,7 @@ export function WallRevealAsset({
 
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [alt, paint, staggerMs]);
+  }, [alt, isHero, paint, staggerMs]);
 
   useEffect(() => {
     let cancelled = false;
@@ -517,12 +557,33 @@ function carveSlice(
   sctx.restore();
 }
 
+function clipToProgress(
+  sctx: CanvasRenderingContext2D,
+  dest: Rect,
+  toP: number,
+) {
+  const p = Math.max(0, Math.min(1, toP));
+  const yTop = dest.y + dest.h * (1 - p);
+  sctx.beginPath();
+  sctx.rect(dest.x - 64, yTop, dest.w + 128, dest.y + dest.h - yTop + 64);
+  sctx.clip();
+}
+
+function heroStampScale(dest: Rect, brush: HTMLImageElement) {
+  // Stamp stays inside a 1/N slice so target 5 ≠ first-fill-half.
+  const maxH = dest.h * 0.12;
+  const natH = Math.max(1, brush.naturalHeight);
+  return Math.min(HERO_BRUSH_REF / DEMO_SIZE, maxH / natH);
+}
+
 function floodBandWithBrush(
   sctx: CanvasRenderingContext2D,
   dest: Rect,
   fromP: number,
   toP: number,
   brush: HTMLImageElement | null,
+  stampScale?: number,
+  clipBand = false,
 ) {
   if (!brush) {
     carveSlice(sctx, dest, fromP, toP);
@@ -533,7 +594,7 @@ function floodBandWithBrush(
   const h = Math.max(0, yBot - yTop);
   if (h < 0.5) return;
 
-  const scale = dest.w / DEMO_SIZE;
+  const scale = stampScale ?? dest.w / DEMO_SIZE;
   const bw = brush.naturalWidth * scale;
   const bh = brush.naturalHeight * scale;
   const ox = DEMO_OFFSET * scale;
@@ -542,6 +603,7 @@ function floodBandWithBrush(
   const stepY = Math.max(6, bh * 0.32);
 
   sctx.save();
+  if (clipBand) clipToProgress(sctx, dest, toP);
   sctx.globalCompositeOperation = "destination-out";
   let row = 0;
   for (let y = yTop - bh * 0.15; y <= yBot + bh * 0.15; y += stepY) {
@@ -598,7 +660,6 @@ function makeScribble(dest: Rect, fromP: number, toP: number, seedKey: string) {
     }
   }
 
-  // Extra diagonal coin-rubs so it looks hand-scratched, not a rising wipe.
   const extras = 3 + Math.floor(rnd() * 3);
   for (let e = 0; e < extras; e += 1) {
     const y1 = yTop + rnd() * band;
