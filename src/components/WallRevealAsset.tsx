@@ -126,13 +126,18 @@ export function WallRevealAsset({
       sctx.restore();
       return;
     }
-    const basis = dest ? Math.min(dest.w, dest.h) : DEMO_SIZE;
-    const scale = Math.min(1.15, Math.max(0.7, basis / DEMO_SIZE));
+    // Same stamp as /play ScratchCard: dest width vs the 300px scratchie demo.
+    const scale = (dest?.w ?? DEMO_SIZE) / DEMO_SIZE;
     const bw = brush.naturalWidth * scale;
     const bh = brush.naturalHeight * scale;
     const ox = DEMO_OFFSET * scale;
     const oy = DEMO_OFFSET * scale;
     const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    if (dist < 0.5) {
+      sctx.drawImage(brush, to.x - ox, to.y - oy, bw, bh);
+      sctx.restore();
+      return;
+    }
     const angle = Math.atan2(to.x - from.x, to.y - from.y);
     for (let i = 0; i < dist; i += 1) {
       const x = from.x + Math.sin(angle) * i - ox;
@@ -154,7 +159,8 @@ export function WallRevealAsset({
         carveAlong(sctx, path[i - 1]!, path[i]!);
       }
     }
-    carveSlice(sctx, dest, fromP, toP);
+    if (toP >= 0.999) carveSlice(sctx, dest, fromP, toP);
+    else floodBandWithBrush(sctx, dest, fromP, toP, brushRef.current);
   };
 
   const paint = useCallback(() => {
@@ -257,39 +263,22 @@ export function WallRevealAsset({
     const tip = lastTipRef.current;
     if (tip && scratchingRef.current) {
       const dest = destRef.current;
-      const ring = Math.max(
-        9,
-        Math.min(dest?.w ?? 40, dest?.h ?? 40) * 0.038,
-      );
+      const scale = (dest?.w ?? DEMO_SIZE) / DEMO_SIZE;
+      const glow = Math.max(10, DEMO_OFFSET * scale * 0.7);
       const g = ctx.createRadialGradient(
         tip.x,
         tip.y,
         0,
         tip.x,
         tip.y,
-        ring * 1.85,
+        glow * 1.6,
       );
-      g.addColorStop(0, "rgba(255,255,255,0.92)");
-      g.addColorStop(0.32, "rgba(255,215,80,0.55)");
+      g.addColorStop(0, "rgba(255,255,255,0.55)");
+      g.addColorStop(0.4, "rgba(255,215,80,0.22)");
       g.addColorStop(1, "rgba(255,191,54,0)");
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(tip.x, tip.y, ring * 1.85, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.strokeStyle = "rgba(255,255,255,0.7)";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(tip.x, tip.y, ring, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.strokeStyle = "rgba(26,115,232,0.92)";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(tip.x, tip.y, ring, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.fillStyle = "rgba(255,191,54,0.48)";
-      ctx.beginPath();
-      ctx.arc(tip.x, tip.y, ring * 0.38, 0, Math.PI * 2);
+      ctx.arc(tip.x, tip.y, glow * 1.6, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -380,7 +369,13 @@ export function WallRevealAsset({
           job.fromProgress + (job.toProgress - job.fromProgress) * ratio;
         dirty = true;
         if (job.index >= job.points.length) {
-          carveSlice(sctx, dest, job.fromProgress, job.toProgress);
+          floodBandWithBrush(
+            sctx,
+            dest,
+            job.fromProgress,
+            job.toProgress,
+            brushRef.current,
+          );
           appliedProgressRef.current = job.toProgress;
           jobRef.current = null;
           lastTipRef.current = null;
@@ -522,14 +517,58 @@ function carveSlice(
   sctx.restore();
 }
 
+function floodBandWithBrush(
+  sctx: CanvasRenderingContext2D,
+  dest: Rect,
+  fromP: number,
+  toP: number,
+  brush: HTMLImageElement | null,
+) {
+  if (!brush) {
+    carveSlice(sctx, dest, fromP, toP);
+    return;
+  }
+  const yBot = dest.y + dest.h * (1 - fromP);
+  const yTop = dest.y + dest.h * (1 - toP);
+  const h = Math.max(0, yBot - yTop);
+  if (h < 0.5) return;
+
+  const scale = dest.w / DEMO_SIZE;
+  const bw = brush.naturalWidth * scale;
+  const bh = brush.naturalHeight * scale;
+  const ox = DEMO_OFFSET * scale;
+  const oy = DEMO_OFFSET * scale;
+  const stepX = Math.max(8, bw * 0.32);
+  const stepY = Math.max(6, bh * 0.32);
+
+  sctx.save();
+  sctx.globalCompositeOperation = "destination-out";
+  let row = 0;
+  for (let y = yTop - bh * 0.15; y <= yBot + bh * 0.15; y += stepY) {
+    const xStart = dest.x - bw * 0.2;
+    const xEnd = dest.x + dest.w + bw * 0.2;
+    if (row % 2 === 0) {
+      for (let x = xStart; x <= xEnd; x += stepX) {
+        sctx.drawImage(brush, x - ox, y - oy, bw, bh);
+      }
+    } else {
+      for (let x = xEnd; x >= xStart; x -= stepX) {
+        sctx.drawImage(brush, x - ox, y - oy, bw, bh);
+      }
+    }
+    row += 1;
+  }
+  sctx.restore();
+}
+
 function makeScribble(dest: Rect, fromP: number, toP: number, seedKey: string) {
   const points: Point[] = [];
   const yBot = dest.y + dest.h * (1 - fromP);
   const yTop = dest.y + dest.h * (1 - toP);
   const band = Math.max(1, yBot - yTop);
-  const rowGap = Math.max(6, Math.min(14, dest.h * 0.045));
-  const rows = Math.max(1, Math.min(6, Math.round(band / rowGap)));
-  const jitter = Math.min(4.5, band * 0.14);
+  const rowGap = Math.max(8, Math.min(18, dest.h * 0.055));
+  const rows = Math.max(3, Math.min(10, Math.round(band / rowGap) + 2));
+  const jitter = Math.min(14, Math.max(5, band * 0.22));
   let seed = 1;
   for (let i = 0; i < seedKey.length; i += 1) seed = (seed * 31 + seedKey.charCodeAt(i)) >>> 0;
   const rnd = () => {
@@ -540,18 +579,38 @@ function makeScribble(dest: Rect, fromP: number, toP: number, seedKey: string) {
   for (let r = 0; r < rows; r += 1) {
     const t = rows === 1 ? 0.5 : r / (rows - 1);
     const y = yBot - t * band + (rnd() - 0.5) * jitter;
-    const pad = dest.w * 0.04;
-    const left = dest.x + pad + rnd() * dest.w * 0.08;
-    const right = dest.x + dest.w - pad - rnd() * dest.w * 0.08;
+    const pad = dest.w * 0.02;
+    const left = dest.x + pad + rnd() * dest.w * 0.06;
+    const right = dest.x + dest.w - pad - rnd() * dest.w * 0.06;
     const goRight = r % 2 === 0;
     const start = goRight ? left : right;
     const end = goRight ? right : left;
-    const segs = 5 + Math.floor(rnd() * 3);
+    const segs = 8 + Math.floor(rnd() * 5);
     for (let s = 0; s <= segs; s += 1) {
       const u = s / segs;
       points.push({
         x: start + (end - start) * u,
-        y: y + Math.sin(u * Math.PI * 2.6) * jitter + (rnd() - 0.5) * jitter,
+        y:
+          y +
+          Math.sin(u * Math.PI * 3.1) * jitter +
+          (rnd() - 0.5) * jitter * 0.8,
+      });
+    }
+  }
+
+  // Extra diagonal coin-rubs so it looks hand-scratched, not a rising wipe.
+  const extras = 3 + Math.floor(rnd() * 3);
+  for (let e = 0; e < extras; e += 1) {
+    const y1 = yTop + rnd() * band;
+    const y2 = yTop + rnd() * band;
+    const x1 = dest.x + rnd() * dest.w;
+    const x2 = dest.x + rnd() * dest.w;
+    const segs = 6;
+    for (let s = 0; s <= segs; s += 1) {
+      const u = s / segs;
+      points.push({
+        x: x1 + (x2 - x1) * u,
+        y: y1 + (y2 - y1) * u + Math.sin(u * Math.PI * 2) * jitter * 0.4,
       });
     }
   }
