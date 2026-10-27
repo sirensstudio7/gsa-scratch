@@ -9,6 +9,7 @@
     "start": "next start -p 9999",
     "lint": "eslint",
     "db:bubble-migration": "node scripts/run-bubble-migration.mjs",
+    "db:migrate": "node scripts/apply-all-bubble-migrations.mjs",
     "setup:supabase": "node scripts/setup-gsa-supabase.mjs"
   },
   "dependencies": {
