@@ -4,9 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 9999",
+    "dev:clean": "rm -rf .next && next dev -p 9999",
     "build": "next build",
     "start": "next start -p 9999",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:bubble-migration": "node scripts/run-bubble-migration.mjs",
+    "setup:supabase": "node scripts/setup-gsa-supabase.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",

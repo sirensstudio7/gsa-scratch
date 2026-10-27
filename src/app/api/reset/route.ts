@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { isValidStaffToken, staffCookieName } from "@/lib/auth";
 import { clearMemoryParticipants, isMemoryMode } from "@/lib/memory-store";
+import { clearBubbleClicks } from "@/lib/bubble-clicks";
+import { clearBubblePopLog } from "@/lib/bubble-pop-log";
 import { clearMemoryScratchProgress } from "@/lib/scratch-progress";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
@@ -29,6 +31,8 @@ export async function POST(request: Request) {
   if (isMemoryMode()) {
     clearMemoryParticipants();
     clearMemoryScratchProgress();
+    clearBubbleClicks();
+    clearBubblePopLog();
     return NextResponse.json({ success: true, mode: "memory" });
   }
 
@@ -51,9 +55,19 @@ export async function POST(request: Request) {
       complete: false,
       fill_started_at: null,
       fill_minutes: null,
+      bubble_clicks: 0,
     })
     .eq("id", 1);
   clearMemoryScratchProgress();
+  clearBubbleClicks();
+  clearBubblePopLog();
+  const { error: popClearErr } = await supabase
+    .from("bubble_pops")
+    .delete()
+    .neq("id", 0);
+  if (popClearErr && popClearErr.code !== "42P01") {
+    console.error("reset bubble_pops", popClearErr);
+  }
 
   return NextResponse.json({ success: true });
 }

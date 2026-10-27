@@ -21,6 +21,7 @@ import {
 } from "@/lib/scratch-progress";
 import { isMemoryMode } from "@/lib/memory-store";
 import { isValidStaffToken, staffCookieName } from "@/lib/auth";
+import { getBubbleClickTotal } from "@/lib/bubble-clicks";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import type { ScratchId } from "@/lib/types";
 
@@ -49,6 +50,7 @@ type SettingsRow = {
   target: number;
   complete: boolean;
   fill: AutoFill | null;
+  bubbleClicks: number;
 };
 
 function parseFill(row: {
@@ -63,16 +65,23 @@ async function readSupabaseSettings(): Promise<SettingsRow | null> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("scratch_settings")
-    .select("target, complete, fill_started_at, fill_minutes")
+    .select(
+      "target, complete, fill_started_at, fill_minutes, bubble_clicks",
+    )
     .eq("id", 1)
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
   const target = Number(data.target);
+  const bubbleRaw = Number(data.bubble_clicks);
   return {
     target: Number.isFinite(target) && target > 0 ? Math.floor(target) : 20,
     complete: data.complete === true,
     fill: parseFill(data),
+    bubbleClicks:
+      Number.isFinite(bubbleRaw) && bubbleRaw >= 0
+        ? Math.floor(bubbleRaw)
+        : 0,
   };
 }
 
@@ -85,6 +94,7 @@ async function writeSupabaseSettings(patch: {
     target: getRevealTarget(),
     complete: getForceComplete(),
     fill: getAutoFill(),
+    bubbleClicks: getBubbleClickTotal(),
   };
   const nextFill =
     patch.fill === undefined
@@ -136,6 +146,7 @@ async function settleSupabaseFill(settings: SettingsRow) {
     target: settings.target,
     complete: true,
     fill: null,
+    bubbleClicks: settings.bubbleClicks,
   };
 }
 
@@ -144,6 +155,7 @@ export async function GET() {
     if (isMemoryMode()) {
       return NextResponse.json({
         ...getMemoryScratchProgress(),
+        bubbleClicks: getBubbleClickTotal(),
         mode: "memory",
       });
     }
@@ -159,12 +171,14 @@ export async function GET() {
       applySettings(settings);
       return NextResponse.json({
         ...toProgressPayload(counts),
+        bubbleClicks: settings?.bubbleClicks ?? getBubbleClickTotal(),
         mode: "supabase",
       });
     } catch (err) {
       console.error("scratch GET supabase fallback", err);
       return NextResponse.json({
         ...getMemoryScratchProgress(),
+        bubbleClicks: getBubbleClickTotal(),
         mode: "memory-fallback",
       });
     }

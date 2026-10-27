@@ -3,15 +3,23 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
 } from "react";
 import { StageShell } from "@/components/StageShell";
-import { WallHeroProgress } from "@/components/WallHeroProgress";
-import { WallFloatDecor } from "@/components/WallFloatDecor";
-import { WallSuccessOverlay } from "@/components/WallSuccessOverlay";
+import {
+  WallBubbleMeetFloats,
+  type WallBubbleMeetFloatsHandle,
+} from "@/components/WallBubbleMeetFloats";
+import { StudentWallResetRedirect } from "@/components/StudentWallResetRedirect";
+import { WallKvLayout } from "@/components/WallKvLayout";
+import type { BubblePopRecord } from "@/lib/bubble-pop-log";
+import { resolveBubblePopIconId } from "@/lib/bubble-pop-log";
+import { SuccessConfetti } from "@/components/SuccessConfetti";
+import { SuccessFireworks } from "@/components/SuccessFireworks";
 import { type Participant, type ScratchId } from "@/lib/types";
 import { isSupabaseConfigured, getSupabaseBrowser } from "@/lib/supabase";
 import {
@@ -19,6 +27,16 @@ import {
   isFillMinutes,
   type AutoFill,
 } from "@/lib/scratch-progress";
+import { bubblesFetchUrl } from "@/lib/bubble-api";
+import {
+  BUBBLE_PROGRESS_CHANNEL,
+  BUBBLE_TOTAL_EVENT,
+  BUBBLE_TOTAL_STORAGE_KEY,
+  bubbleWallProgress,
+  readStoredBubbleTotal,
+} from "@/lib/wall-bubble-fill";
+
+const BUBBLE_CATCHUP_MS = 2800;
 
 const WALL_NAME_ACCENTS = ["#4285f4", "#ea4335", "#fbbc05", "#34a853"] as const;
 const TOAST_VISIBLE_MS = 5000;
@@ -97,37 +115,75 @@ export default function WallPage() {
   const animRaf = useRef(0);
   const autoFillRaf = useRef(0);
   const autoFillRef = useRef<AutoFill | null>(null);
-  const submitCountRef = useRef(0);
+  const [bubbleClicks, setBubbleClicks] = useState(0);
+  const [bubblePops, setBubblePops] = useState<BubblePopRecord[]>([]);
+  const bubbleClicksRef = useRef(0);
+  const floatsRef = useRef<WallBubbleMeetFloatsHandle>(null);
+  const hydratedRef = useRef(false);
+  const bootstrapPopsRef = useRef<BubblePopRecord[]>([]);
+  const lastPopIdRef = useRef(0);
   const targetRef = useRef(20);
   autoFillRef.current = autoFill;
-  submitCountRef.current = participants.length;
+  bubbleClicksRef.current = bubbleClicks;
   targetRef.current = target;
   const [hydrated, setHydrated] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
+  hydratedRef.current = hydrated;
   const didHydrateSnap = useRef(false);
   const scratchAudio = useRef<HTMLAudioElement | null>(null);
   const popAudio = useRef<HTMLAudioElement | null>(null);
   const soundEnabledRef = useRef(false);
   const audioUnlockedRef = useRef(false);
 
-  /** #Team Google + Gemini scratch when a student hits Submit, or timed staff fill. */
+  /** KV wave fill from welcome bubble taps (or timed staff fill). */
   const revealProgress = useMemo(() => {
     if (forceComplete) return 1;
-    const submit =
-      target <= 0 ? 0 : Math.min(1, participants.length / target);
-    return Math.max(submit, autoFillProgress(autoFill));
-  }, [forceComplete, participants.length, target, autoFill]);
+    const fromBubbles = bubbleWallProgress(bubbleClicks, target);
+    return Math.max(fromBubbles, autoFillProgress(autoFill));
+  }, [forceComplete, bubbleClicks, target, autoFill]);
 
-  /** Hat / pencil / ribbon / books: green-check counts, or the timed staff fill. */
-  const floatProgress = useMemo(() => {
-    if (forceComplete) return { hat: 1, pencil: 1, ribbon: 1 };
-    if (!autoFill) return assetProgress;
-    return {
-      hat: Math.max(assetProgress.hat, displayProgress),
-      pencil: Math.max(assetProgress.pencil, displayProgress),
-      ribbon: Math.max(assetProgress.ribbon, displayProgress),
-    };
-  }, [forceComplete, autoFill, assetProgress, displayProgress]);
+  /** Latch at 100% — confetti + caption until staff Reset Event Data. */
+  const [celebrationHeld, setCelebrationHeld] = useState(false);
+
+  useEffect(() => {
+    if (revealProgress >= 0.999 || forceComplete) {
+      setCelebrationHeld(true);
+    }
+  }, [revealProgress, forceComplete]);
+
+  useEffect(() => {
+    if (!celebrationHeld) return;
+    const staffReset =
+      bubbleClicks <= 0 &&
+      !forceComplete &&
+      revealProgress < 0.02 &&
+      !autoFill;
+    if (!staffReset) return;
+    setCelebrationHeld(false);
+    setBubblePops([]);
+    floatsRef.current?.prime([]);
+  }, [
+    celebrationHeld,
+    bubbleClicks,
+    forceComplete,
+    revealProgress,
+    autoFill,
+  ]);
+
+  const kvProgress = celebrationHeld ? 1 : revealProgress;
+  const teamProgress = celebrationHeld ? 1 : displayProgress;
+
+  useLayoutEffect(() => {
+    void fetch(bubblesFetchUrl("total"), { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && typeof data.total === "number") {
+          setBubbleClicks(Math.max(0, Math.floor(data.total)));
+        }
+      })
+      .catch(() => {
+        /* ignore */
+      });
+  }, []);
 
   useEffect(() => {
     const audio = new Audio(SCRATCH_SOUND_SRC);
@@ -309,10 +365,10 @@ export default function WallPage() {
     let lastBand = Math.floor(displayProgressRef.current / 0.04);
     const tick = () => {
       const targetNow = targetRef.current;
-      const submit =
-        targetNow <= 0
-          ? 0
-          : Math.min(1, submitCountRef.current / targetNow);
+      const submit = bubbleWallProgress(
+        bubbleClicksRef.current,
+        targetNow,
+      );
       const next = Math.max(submit, autoFillProgress(autoFillRef.current));
       displayProgressRef.current = next;
       setDisplayProgress(next);
@@ -342,16 +398,6 @@ export default function WallPage() {
     prevAssetProgress.current = assetProgress;
     if (rose) playScratchSound();
   }, [assetProgress, hydrated, playScratchSound]);
-
-  /** After the wipe finishes at 100%, show the wall success finale. */
-  useEffect(() => {
-    if (displayProgress < 0.999) {
-      setShowSuccess(false);
-      return;
-    }
-    const t = setTimeout(() => setShowSuccess(true), 550);
-    return () => clearTimeout(t);
-  }, [displayProgress]);
 
   const pushToast = useCallback((p: Participant) => {
     if (seenIds.current.has(p.id)) return;
@@ -390,34 +436,233 @@ export default function WallPage() {
   );
 
   useEffect(() => {
-    let cancelled = false;
+    let alive = true;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let bubblePollTimer: ReturnType<typeof setInterval> | null = null;
     let channel: ReturnType<
       ReturnType<typeof getSupabaseBrowser>["channel"]
     > | null = null;
+    let bubblePopChannel: ReturnType<
+      ReturnType<typeof getSupabaseBrowser>["channel"]
+    > | null = null;
+    let scratchSettingsChannel: ReturnType<
+      ReturnType<typeof getSupabaseBrowser>["channel"]
+    > | null = null;
+    let bubbleChannel: BroadcastChannel | null = null;
+
+    const mergeBubblePops = (pops: BubblePopRecord[]) => {
+      if (!pops.length) return;
+      setBubblePops((prev) => {
+        const map = new Map(prev.map((p) => [p.id, p]));
+        for (const p of pops) map.set(p.id, p);
+        return [...map.values()].sort((a, b) => a.id - b.id);
+      });
+    };
+
+    const applyBubbleTotal = (total: number) => {
+      const n = Math.max(0, Math.floor(total));
+      if (n === bubbleClicksRef.current) return;
+      setBubbleClicks(n);
+      if (n === 0) {
+        setBubblePops([]);
+        lastPopIdRef.current = 0;
+        floatsRef.current?.prime([]);
+      }
+    };
+
+    const applyBubblePayload = (payload: {
+      total?: number;
+      pop?: BubblePopRecord;
+      pops?: BubblePopRecord[];
+    }) => {
+      if (typeof payload.total === "number" && payload.total >= 0) {
+        applyBubbleTotal(payload.total);
+      }
+      if (payload.pops?.length) mergeBubblePops(payload.pops);
+      if (payload.pop) {
+        lastPopIdRef.current = Math.max(lastPopIdRef.current, payload.pop.id);
+        mergeBubblePops([payload.pop]);
+        if (hydratedRef.current) {
+          floatsRef.current?.spawn(payload.pop);
+        }
+      }
+    };
+
+    const onBubbleEvent = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ total?: number; pop?: BubblePopRecord }>)
+        .detail;
+      if (detail) applyBubblePayload(detail);
+    };
+
+    const onStorage = (ev: StorageEvent) => {
+      if (ev.key !== BUBBLE_TOTAL_STORAGE_KEY || ev.newValue == null) return;
+      applyBubblePayload({ total: Number(ev.newValue) });
+    };
+
+    window.addEventListener(BUBBLE_TOTAL_EVENT, onBubbleEvent);
+    window.addEventListener("storage", onStorage);
+
+    try {
+      bubbleChannel = new BroadcastChannel(BUBBLE_PROGRESS_CHANNEL);
+      bubbleChannel.onmessage = (ev) => {
+        applyBubblePayload({
+          total: Number(ev.data?.total),
+          pop: ev.data?.pop as BubblePopRecord | undefined,
+        });
+      };
+    } catch {
+      /* ignore */
+    }
+
+    const stored = readStoredBubbleTotal();
+    if (stored != null) applyBubblePayload({ total: stored });
+
+    async function fetchBubbleBootstrap() {
+      try {
+        const res = await fetch(bubblesFetchUrl("full"), { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        const pops = Array.isArray(data.pops)
+          ? (data.pops as BubblePopRecord[])
+          : undefined;
+        if (pops?.length) {
+          bootstrapPopsRef.current = pops;
+          lastPopIdRef.current = pops.reduce(
+            (m, p) => Math.max(m, p.id),
+            lastPopIdRef.current,
+          );
+        }
+        applyBubblePayload({
+          total: Number(data.total) || 0,
+          pops,
+        });
+      } catch {
+        /* ignore */
+      }
+    }
+
+    async function catchUpBubblePops() {
+      try {
+        const res = await fetch(
+          bubblesFetchUrl("recent", lastPopIdRef.current),
+          { cache: "no-store" },
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (typeof data.total === "number") {
+          applyBubbleTotal(Number(data.total) || 0);
+        }
+        const pops = Array.isArray(data.pops)
+          ? (data.pops as BubblePopRecord[])
+          : [];
+        if (!pops.length) return;
+        for (const p of pops) {
+          lastPopIdRef.current = Math.max(lastPopIdRef.current, p.id);
+        }
+        applyBubblePayload({ pops });
+      } catch {
+        /* ignore */
+      }
+    }
 
     async function bootstrap() {
-      const [peopleRes, scratchRes] = await Promise.all([
-        fetch("/api/participants"),
-        fetch("/api/scratch"),
-      ]);
-      const data = await peopleRes.json();
-      const scratch = await scratchRes.json();
-      if (cancelled) return;
+      try {
+        const [peopleRes, scratchRes] = await Promise.all([
+          fetch("/api/participants"),
+          fetch("/api/scratch"),
+        ]);
+        await fetchBubbleBootstrap();
 
-      const list: Participant[] = data.participants ?? [];
-      setParticipants(list);
-      for (const p of list) seenIds.current.add(p.id);
-      if (typeof scratch.target === "number" && scratch.target > 0) {
-        setTarget(scratch.target);
+        if (peopleRes.ok) {
+          const data = await peopleRes.json();
+          const list: Participant[] = data.participants ?? [];
+          setParticipants(list);
+          for (const p of list) seenIds.current.add(p.id);
+        }
+
+        if (scratchRes.ok) {
+          const scratch = await scratchRes.json();
+          if (typeof scratch.target === "number" && scratch.target > 0) {
+            setTarget(scratch.target);
+          }
+          if (typeof scratch.bubbleClicks === "number") {
+            applyBubbleTotal(scratch.bubbleClicks);
+          }
+          setForceComplete(scratch.complete === true);
+          setAssetProgress(readAssetProgress(scratch));
+          setAutoFill((prev) => {
+            const next = readAutoFill(scratch);
+            return sameFill(prev, next) ? prev : next;
+          });
+        }
+      } catch (err) {
+        console.error("wall bootstrap", err);
       }
-      setForceComplete(scratch.complete === true);
-      setAssetProgress(readAssetProgress(scratch));
-      setAutoFill((prev) => {
-        const next = readAutoFill(scratch);
-        return sameFill(prev, next) ? prev : next;
-      });
+      if (!alive) return;
+
       setHydrated(true);
+      requestAnimationFrame(() => {
+        floatsRef.current?.prime(bootstrapPopsRef.current);
+      });
+
+      bubblePollTimer = setInterval(() => void catchUpBubblePops(), BUBBLE_CATCHUP_MS);
+
+      if (isSupabaseConfigured()) {
+        try {
+          const supabase = getSupabaseBrowser();
+          bubblePopChannel = supabase
+            .channel("wall-bubble-pops")
+            .on(
+              "postgres_changes",
+              {
+                event: "INSERT",
+                schema: "public",
+                table: "bubble_pops",
+              },
+              (payload) => {
+                const row = payload.new as Record<string, unknown>;
+                const id = Number(row.id);
+                if (!Number.isFinite(id)) return;
+                applyBubblePayload({
+                  pop: {
+                    id,
+                    iconId: resolveBubblePopIconId(row.icon_id),
+                    createdAt: String(
+                      row.created_at ?? new Date().toISOString(),
+                    ),
+                  },
+                });
+              },
+            )
+            .subscribe();
+
+          scratchSettingsChannel = supabase
+            .channel("wall-scratch-settings")
+            .on(
+              "postgres_changes",
+              {
+                event: "UPDATE",
+                schema: "public",
+                table: "scratch_settings",
+              },
+              (payload) => {
+                const row = payload.new as Record<string, unknown>;
+                const clicks = Number(row.bubble_clicks);
+                if (Number.isFinite(clicks) && clicks >= 0) {
+                  applyBubbleTotal(clicks);
+                }
+                const nextTarget = Number(row.target);
+                if (Number.isFinite(nextTarget) && nextTarget > 0) {
+                  setTarget(Math.floor(nextTarget));
+                }
+                if (row.complete === true) setForceComplete(true);
+              },
+            )
+            .subscribe();
+        } catch (err) {
+          console.error("wall bubble_pops realtime", err);
+        }
+      }
 
       pollTimer = setInterval(async () => {
         try {
@@ -435,6 +680,9 @@ export default function WallPage() {
           if (typeof dScratch.target === "number" && dScratch.target > 0) {
             setTarget(dScratch.target);
           }
+          if (typeof dScratch.bubbleClicks === "number") {
+            applyBubbleTotal(dScratch.bubbleClicks);
+          }
           setForceComplete(dScratch.complete === true);
           setAssetProgress(readAssetProgress(dScratch));
           setAutoFill((prev) => {
@@ -444,7 +692,7 @@ export default function WallPage() {
         } catch {
           /* ignore */
         }
-      }, 700);
+      }, 2000);
 
       if (data.mode !== "memory" && isSupabaseConfigured()) {
         try {
@@ -468,13 +716,22 @@ export default function WallPage() {
     void bootstrap();
 
     return () => {
-      cancelled = true;
+      alive = false;
+      window.removeEventListener(BUBBLE_TOTAL_EVENT, onBubbleEvent);
+      window.removeEventListener("storage", onStorage);
+      bubbleChannel?.close();
       if (pollTimer) clearInterval(pollTimer);
+      if (bubblePollTimer) clearInterval(bubblePollTimer);
       timers.current.forEach((list) => list.forEach(clearTimeout));
       timers.current.clear();
-      if (channel && isSupabaseConfigured()) {
+      if (isSupabaseConfigured()) {
         try {
-          void getSupabaseBrowser().removeChannel(channel);
+          const supabase = getSupabaseBrowser();
+          if (channel) void supabase.removeChannel(channel);
+          if (bubblePopChannel) void supabase.removeChannel(bubblePopChannel);
+          if (scratchSettingsChannel) {
+            void supabase.removeChannel(scratchSettingsChannel);
+          }
         } catch {
           /* ignore */
         }
@@ -483,25 +740,26 @@ export default function WallPage() {
   }, [mergeParticipant, pushToast]);
 
   return (
-    <StageShell showTeamMark={false}>
-      <div className="relative z-0 flex min-h-0 flex-1 items-center justify-center px-10 pb-8 pt-4">
-        <div
-          className={`wall-scratch-stage relative flex w-full max-w-7xl items-center justify-center transition-opacity duration-700 ${
-            showSuccess ? "pointer-events-none opacity-0" : "opacity-100"
-          }`}
-        >
-          <div className="relative">
-            <WallHeroProgress progress={displayProgress} />
-            <WallFloatDecor progress={floatProgress} />
-          </div>
-        </div>
+    <StageShell showTeamMark={false} showHeader={false}>
+      <StudentWallResetRedirect bubbleClicks={bubbleClicks} ready={hydrated} />
+      <div className="wall-scratch-stage relative z-0 min-h-0 flex-1">
+        <WallKvLayout
+          kvFillProgress={kvProgress}
+          teamGoogleProgress={teamProgress}
+          showGraduationCaption={celebrationHeld}
+          showCelebrationRewards={celebrationHeld}
+        />
       </div>
 
-      <div
-        className={`pointer-events-none absolute inset-0 z-20 transition-opacity duration-500 ${
-          showSuccess ? "opacity-0" : "opacity-100"
-        }`}
-      >
+      <div className="pointer-events-none absolute inset-0 z-[15]">
+        <WallBubbleMeetFloats
+          ref={floatsRef}
+          pops={bubblePops}
+          live={hydrated}
+        />
+      </div>
+
+      <div className="pointer-events-none absolute inset-0 z-20">
         {toasts.map((t) => {
           const tilt = ((hashTilt(t.id) % 11) - 5) * 1.4;
           const avatarSrc = genderAvatarSrc(t.gender);
@@ -533,8 +791,14 @@ export default function WallPage() {
         })}
       </div>
 
-      {showSuccess ? (
-        <WallSuccessOverlay />
+      {celebrationHeld ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-[35]"
+          aria-hidden
+        >
+          <SuccessFireworks key="wall-celebration-fireworks" />
+          <SuccessConfetti key="wall-celebration-confetti" />
+        </div>
       ) : null}
     </StageShell>
   );

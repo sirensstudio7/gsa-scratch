@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { bubblesFetchUrl } from "@/lib/bubble-api";
 import {
   autoFillRemainingMs,
   FILL_MINUTES,
@@ -9,6 +10,30 @@ import {
   type AutoFill,
   type FillMinutes,
 } from "@/lib/scratch-progress";
+import { bubbleWallProgress, publishBubbleTotal } from "@/lib/wall-bubble-fill";
+import { getBubblesPerStudent } from "@/lib/wall-student-session";
+
+const BUBBLES_PER_STUDENT = getBubblesPerStudent();
+
+const staffFetch: typeof fetch = (input, init) =>
+  fetch(input, { ...init, credentials: "include" });
+const SIM_STUDENT_TARGET = 100;
+/** Delay between pops inside one student session (welcome-like). */
+const SIM_POP_MS = 165;
+const SIM_BETWEEN_STUDENTS_MS = 450;
+
+async function simulateOneStudentSession(studentIndex: number) {
+  const res = await staffFetch("/api/simulate/student-bubbles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ studentIndex }),
+  });
+  if (!res.ok) return null;
+  return (await res.json()) as {
+    total?: number;
+    pops?: { id: number; iconId: string; createdAt: string }[];
+  };
+}
 
 const SCRATCH_SOUND_SRC = "/sounds/paper-scratch.mp3";
 const SOUND_FLAG_KEY = "gsa_wall_scratch_sound";
@@ -39,7 +64,8 @@ export default function StaffPage() {
   const [simDone, setSimDone] = useState(0);
   const simAbort = useRef(false);
   const scratchAudio = useRef<HTMLAudioElement | null>(null);
-  const lastTotalForSound = useRef<number | null>(null);
+  const [bubbleClicks, setBubbleClicks] = useState(0);
+  const lastBubbleClicksForSound = useRef<number | null>(null);
   const soundOnRef = useRef(false);
   const expectedTotalRef = useRef(expectedTotal);
   const expectedDraftRef = useRef(expectedDraft);
@@ -105,7 +131,7 @@ export default function StaffPage() {
         } catch {
           /* ignore */
         }
-        setMessage("Suara scratch aktif — bunyi saat wall fill naik.");
+        setMessage("Suara scratch aktif — bunyi saat bubble di-tap di welcome.");
       })
       .catch(() => {
         setMessage("Gagal mengaktifkan suara. Coba lagi.");
@@ -128,9 +154,10 @@ export default function StaffPage() {
   }, []);
 
   const refreshStats = useCallback(async () => {
-    const [statsRes, scratchRes] = await Promise.all([
-      fetch("/api/stats"),
-      fetch("/api/scratch"),
+    const [statsRes, scratchRes, bubblesRes] = await Promise.all([
+      staffFetch("/api/stats"),
+      staffFetch("/api/scratch"),
+      staffFetch(bubblesFetchUrl("total")),
     ]);
     if (statsRes.status === 401) {
       setAuthed(false);
@@ -145,13 +172,18 @@ export default function StaffPage() {
       setOther(data.other ?? 0);
       setAuthed(true);
 
-      if (lastTotalForSound.current === null) {
-        lastTotalForSound.current = nextTotal;
-      } else if (nextTotal > lastTotalForSound.current) {
+    }
+    if (bubblesRes.ok) {
+      const bubbles = await bubblesRes.json();
+      const nextBubbles = Number(bubbles.total) || 0;
+      setBubbleClicks(nextBubbles);
+      if (lastBubbleClicksForSound.current === null) {
+        lastBubbleClicksForSound.current = nextBubbles;
+      } else if (nextBubbles > lastBubbleClicksForSound.current) {
         playScratchSound();
-        lastTotalForSound.current = nextTotal;
+        lastBubbleClicksForSound.current = nextBubbles;
       } else {
-        lastTotalForSound.current = nextTotal;
+        lastBubbleClicksForSound.current = nextBubbles;
       }
     }
     if (scratchRes.ok) {
@@ -193,46 +225,51 @@ export default function StaffPage() {
   const login = async () => {
     setLoading(true);
     setMessage(null);
-    const res = await fetch("/api/staff-login", {
+    const res = await staffFetch("/api/staff-login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ token: token.trim() }),
     });
     setLoading(false);
     if (!res.ok) {
-      setMessage("Token salah.");
+      setMessage(
+        "Token salah. Harus sama persis dengan STAFF_TOKEN di .env.local (default: gsa-staff-2026). Setelah ubah .env, restart npm run dev.",
+      );
       return;
     }
     setAuthed(true);
     setToken("");
+    setMessage(null);
     await refreshStats();
   };
 
   const logout = async () => {
-    await fetch("/api/staff-login", { method: "DELETE" });
+    await staffFetch("/api/staff-login", { method: "DELETE" });
     setAuthed(false);
   };
 
   const saveExpectedTotal = async () => {
     const n = Number(expectedDraft);
     if (!Number.isFinite(n) || n < 1) {
-      setMessage("Masukkan angka total participant (min 1).");
+      setMessage("Masukkan target tap (min 1).");
       return;
     }
-    const res = await fetch("/api/scratch", {
+    const res = await staffFetch("/api/scratch", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ target: n }),
     });
     if (!res.ok) {
-      setMessage("Gagal menyimpan total participant.");
+      setMessage("Gagal menyimpan target tap.");
       return;
     }
     const data = await res.json();
     const next = data.target ?? n;
     setExpectedTotal(next);
     setExpectedDraft(String(next));
-    setMessage(`Target disimpan: ${next} siswa.`);
+    setMessage(
+      `Target ${next} tap disimpan — wall penuh saat total bubble tap = ${next}.`,
+    );
   };
 
   const fillWall = async () => {
@@ -244,7 +281,7 @@ export default function StaffPage() {
     ) {
       return;
     }
-    const res = await fetch("/api/scratch", {
+    const res = await staffFetch("/api/scratch", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ complete: true }),
@@ -266,7 +303,7 @@ export default function StaffPage() {
     ) {
       return;
     }
-    const res = await fetch("/api/scratch", {
+    const res = await staffFetch("/api/scratch", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fillMinutes: minutes }),
@@ -286,7 +323,7 @@ export default function StaffPage() {
   };
 
   const reopenWall = async () => {
-    const res = await fetch("/api/scratch", {
+    const res = await staffFetch("/api/scratch", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ complete: false, stopFill: true }),
@@ -301,7 +338,7 @@ export default function StaffPage() {
   };
 
   const stopTimedFill = async () => {
-    const res = await fetch("/api/scratch", {
+    const res = await staffFetch("/api/scratch", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ stopFill: true }),
@@ -319,7 +356,7 @@ export default function StaffPage() {
     if (!confirm("Reset semua participant data? Tidak bisa dibatalkan.")) {
       return;
     }
-    const res = await fetch("/api/reset", {
+    const res = await staffFetch("/api/reset", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ confirm: true }),
@@ -329,7 +366,8 @@ export default function StaffPage() {
       return;
     }
     setMessage("Event data di-reset.");
-    lastTotalForSound.current = 0;
+    lastBubbleClicksForSound.current = 0;
+    publishBubbleTotal(0);
     await refreshStats();
   };
 
@@ -338,9 +376,15 @@ export default function StaffPage() {
       simAbort.current = true;
       return;
     }
+    const bubblesPerStudent = BUBBLES_PER_STUDENT;
+    const estSec = Math.round(
+      (SIM_STUDENT_TARGET *
+        (bubblesPerStudent * SIM_POP_MS + SIM_BETWEEN_STUDENTS_MS)) /
+        1000,
+    );
     if (
       !confirm(
-        "Simulasi 100 siswa ke /wall?\n\nReset dulu kalau sudah ada data nyata.\nTarget di-set ke 100, lalu nama palsu masuk satu per satu (~35 detik) supaya progress + toast kelihatan di projector.\n\nReset Event Data lagi setelah tes.",
+        `Simulasi ${SIM_STUDENT_TARGET} siswa ke /wall?\n\nReset dulu kalau sudah ada data nyata.\nTarget = ${SIM_STUDENT_TARGET}. Tiap siswa pop ~${bubblesPerStudent} bubble (random order) seperti di welcome — icon float naik di /wall. Perkiraan ~${estSec}s (bisa Stop).\n\nReset Event Data lagi setelah tes.`,
       )
     ) {
       return;
@@ -348,37 +392,56 @@ export default function StaffPage() {
     simAbort.current = false;
     setSimRunning(true);
     setSimDone(0);
-    setMessage("Simulasi jalan… buka /wall di projector.");
+    setMessage("Simulasi siswa pop bubble… buka /wall di projector.");
 
-    const targetRes = await fetch("/api/scratch", {
+    const simTapTarget = SIM_STUDENT_TARGET * bubblesPerStudent;
+    const targetRes = await staffFetch("/api/scratch", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ target: 100 }),
+      body: JSON.stringify({ target: simTapTarget }),
     });
     if (!targetRes.ok) {
       setSimRunning(false);
-      setMessage("Gagal set target 100.");
+      setMessage(`Gagal set target ${simTapTarget} tap.`);
       return;
     }
-    setExpectedTotal(100);
-    setExpectedDraft("100");
+    setExpectedTotal(simTapTarget);
+    setExpectedDraft(String(simTapTarget));
 
-    const total = 100;
-    let done = 0;
-    for (let i = 0; i < total; i += 1) {
+    let studentsDone = 0;
+    let clickTotal = bubbleClicks;
+    const bubblesSnap = await staffFetch("/api/bubbles", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+    if (bubblesSnap && typeof bubblesSnap.total === "number") {
+      clickTotal = Math.max(0, Math.floor(bubblesSnap.total));
+    }
+    for (let s = 0; s < SIM_STUDENT_TARGET; s += 1) {
       if (simAbort.current) break;
-      const res = await fetch("/api/simulate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ count: 1, offset: i }),
-      });
-      if (!res.ok) {
-        setMessage(`Simulasi gagal di ${i + 1}/100.`);
+      const data = await simulateOneStudentSession(s);
+      if (!data?.pops?.length) {
+        setMessage(`Simulasi gagal — siswa ${s + 1}.`);
+        simAbort.current = true;
         break;
       }
-      done = i + 1;
-      setSimDone(done);
-      await new Promise((r) => setTimeout(r, 320));
+      for (let b = 0; b < data.pops.length; b += 1) {
+        if (simAbort.current) break;
+        const pop = data.pops[b]!;
+        clickTotal += 1;
+        publishBubbleTotal(clickTotal, pop);
+        setBubbleClicks(clickTotal);
+        lastBubbleClicksForSound.current = clickTotal;
+        await new Promise((r) => setTimeout(r, SIM_POP_MS));
+      }
+      if (typeof data.total === "number") {
+        clickTotal = data.total;
+        setBubbleClicks(clickTotal);
+        lastBubbleClicksForSound.current = clickTotal;
+      }
+      studentsDone = s + 1;
+      setSimDone(studentsDone);
+      if (simAbort.current) break;
+      await new Promise((r) => setTimeout(r, SIM_BETWEEN_STUDENTS_MS));
     }
 
     const stopped = simAbort.current;
@@ -387,8 +450,8 @@ export default function StaffPage() {
     await refreshStats();
     setMessage(
       stopped
-        ? `Simulasi dihentikan di ${done}/100. Cek /wall.`
-        : "Simulasi 100 siswa selesai. Cek projector /wall.",
+        ? `Simulasi dihentikan — ${studentsDone}/${SIM_STUDENT_TARGET} siswa. Cek /wall.`
+        : `Simulasi selesai — ${SIM_STUDENT_TARGET} siswa pop bubble. Cek projector /wall.`,
     );
   };
 
@@ -408,8 +471,12 @@ export default function StaffPage() {
                 type="password"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void login();
+                }}
+                autoComplete="off"
                 className="mt-2 w-full rounded-xl border-2 border-[#dadce0] px-3 py-2.5 outline-none focus:border-[#1a73e8]"
-                placeholder="Enter token"
+                placeholder="gsa-staff-2026"
               />
             </label>
             <button
@@ -448,11 +515,15 @@ export default function StaffPage() {
 
             <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-[#d2e3fc]">
               <p className="text-sm font-bold text-[#1f1f1f]">
-                Suara scratch (wall fill)
+                Suara scratch (bubble tap)
               </p>
               <p className="mt-1 text-xs leading-relaxed text-[#5f6368]">
-                Aktifkan sekali di sini. Bunyi scratch diputar tiap kali
-                participant bertambah (wall fill naik).
+                Aktifkan sekali di sini. Bunyi scratch diputar tiap kali siswa
+                tap bubble di halaman welcome (total klik:{" "}
+                <span className="font-bold tabular-nums text-[#1a73e8]">
+                  {bubbleClicks}
+                </span>
+                ).
               </p>
               {soundOn ? (
                 <div className="mt-3 flex items-center gap-2">
@@ -480,44 +551,52 @@ export default function StaffPage() {
 
             <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-[#d2e3fc]">
               <p className="text-sm font-bold text-[#1f1f1f]">
-                Berapa siswa hari ini?
+                Wall fill (bubble tap)
               </p>
               <p className="mt-1 text-xs leading-relaxed text-[#5f6368]">
-                Isi jumlah siswa yang ikut. Wall mulai dari putih, lalu
-                berwarna bertahap setiap siswa submit — penuh warna saat
-                mencapai target.
+                Isi target bubble tap. Tiap pop di welcome menambah fill di /wall
+                (judul + buku + globe satu fill; #TeamGoogle scratch terpisah).
+                Penuh saat total tap = target. Icon float tiap pop.
               </p>
 
               <div className="mt-4 grid grid-cols-2 gap-3">
                 <div className="rounded-xl bg-[#f8fbff] px-3 py-3">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-[#5f6368]">
-                    Sudah submit
+                    Total bubble tap
                   </p>
                   <p className="mt-1 text-2xl font-black text-[#1a73e8]">
-                    {total}
+                    {bubbleClicks}
                   </p>
                 </div>
                 <div className="rounded-xl bg-[#f8fbff] px-3 py-3">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-[#5f6368]">
-                    Target hari ini
+                    Target tap
                   </p>
                   <p className="mt-1 text-2xl font-black text-[#1f1f1f]">
                     {expectedTotal}
                   </p>
+                  <p className="mt-0.5 text-[10px] font-semibold text-[#5f6368]">
+                    tap = wall penuh
+                  </p>
                 </div>
               </div>
+              <p className="mt-2 text-center text-xs font-semibold tabular-nums text-[#1a73e8]">
+                Fill wall:{" "}
+                {Math.round(bubbleWallProgress(bubbleClicks, expectedTotal) * 100)}
+                %
+              </p>
 
               <div className="mt-3 flex gap-2">
                 <input
                   type="number"
                   min={1}
-                  max={5000}
+                  max={50000}
                   value={expectedDraft}
                   onChange={(e) => setExpectedDraft(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") void saveExpectedTotal();
                   }}
-                  placeholder="contoh: 80"
+                  placeholder="contoh: 500 tap"
                   className="h-11 w-full rounded-xl bg-[#f8fbff] px-3 text-base font-bold tabular-nums text-[#1f1f1f] outline-none ring-1 ring-[#d2e3fc] focus:ring-2 focus:ring-[#1a73e8]"
                 />
                 <button
@@ -545,7 +624,7 @@ export default function StaffPage() {
                 className="cursor-pointer rounded-full bg-[#fbbc05] py-3 font-bold text-[#1f1f1f] transition hover:bg-[#f9ab00] hover:shadow-md active:scale-[0.98]"
               >
                 {simRunning
-                  ? `Stop simulasi (${simDone}/100)`
+                  ? `Stop simulasi (${simDone}/${SIM_STUDENT_TARGET} siswa)`
                   : "Simulasi 100 siswa"}
               </button>
               <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-[#d2e3fc]">

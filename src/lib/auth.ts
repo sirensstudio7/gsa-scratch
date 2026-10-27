@@ -2,13 +2,34 @@ import { cookies } from "next/headers";
 
 const STAFF_COOKIE = "gsa_staff";
 
+const DEV_STAFF_TOKEN = "gsa-staff-2026";
+
 export function getStaffToken() {
-  return process.env.STAFF_TOKEN || "gsa-staff-2026";
+  const fromEnv = process.env.STAFF_TOKEN?.trim();
+  if (fromEnv) return fromEnv;
+  if (process.env.NODE_ENV === "production") {
+    return "";
+  }
+  return DEV_STAFF_TOKEN;
+}
+
+export function isStaffTokenConfigured() {
+  return getStaffToken().length > 0;
+}
+
+export function staffSessionCookieOptions(maxAgeSec = 60 * 60 * 12) {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    path: "/",
+    maxAge: maxAgeSec,
+    secure: process.env.NODE_ENV === "production",
+  };
 }
 
 export function isValidStaffToken(token: string | null | undefined) {
   if (!token) return false;
-  return token === getStaffToken();
+  return token.trim() === getStaffToken();
 }
 
 export async function isStaffAuthenticated() {

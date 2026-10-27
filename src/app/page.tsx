@@ -1,39 +1,34 @@
 "use client";
 
-import Image from "next/image";
-import Link from "next/link";
+import { useCallback, useState } from "react";
+import { OnboardingBubbleField } from "@/components/OnboardingBubbleField";
 import { StageShell } from "@/components/StageShell";
+import {
+  StudentWallCelebrateRedirect,
+  type WelcomeWallProgressState,
+} from "@/components/StudentWallCelebrateRedirect";
 
 export default function WelcomePage() {
+  const [progress, setProgress] = useState<WelcomeWallProgressState>({
+    ready: false,
+    goalReached: false,
+  });
+
+  const onWelcomeProgress = useCallback((state: WelcomeWallProgressState) => {
+    setProgress(state);
+  }, []);
+
+  const showBubbleField = progress.ready && !progress.goalReached;
+
   return (
     <StageShell showTeamMark={false}>
-      <div className="flex flex-1 flex-col items-center justify-center px-4 pb-24 pt-6">
-        <Link
-          href="/play"
-          className="group relative flex max-w-4xl flex-col items-center outline-none"
-          aria-label="Start Magic Scratch"
-        >
-          <div className="hero-stage relative mx-auto w-[min(96vw,720px)]">
-            <div className="hero-logo-wrap relative z-10 mx-auto">
-              <Image
-                src="/assets/tg-logo-hero-v2.png"
-                alt="#Team Google — Google Student Ambassador Graduation Event"
-                width={1024}
-                height={605}
-                className="hero-logo-main h-auto w-full object-contain drop-shadow-lg"
-                priority
-              />
-              <span className="hero-shine" aria-hidden>
-                <span className="hero-shine-beam" />
-              </span>
-            </div>
+      <StudentWallCelebrateRedirect onWelcomeProgress={onWelcomeProgress} />
+      <div className="onboarding-welcome-stage relative flex min-h-0 flex-1 flex-col items-center justify-start overflow-hidden px-2 pb-4 pt-1 sm:-mt-20 sm:justify-center sm:overflow-visible sm:pb-10 sm:pt-0 sm:px-3 md:-mt-[4.75rem]">
+        {showBubbleField ? (
+          <div className="onboarding-field-mobile-shell w-full max-w-[480px] sm:max-w-none sm:w-auto">
+            <OnboardingBubbleField autoRestart />
           </div>
-
-          <span className="cta-pill mt-8 inline-flex items-center gap-2 rounded-full px-6 py-3 text-sm font-bold text-white transition group-hover:scale-105">
-            Start Onboarding
-            <span aria-hidden>-&gt;</span>
-          </span>
-        </Link>
+        ) : null}
       </div>
     </StageShell>
   );

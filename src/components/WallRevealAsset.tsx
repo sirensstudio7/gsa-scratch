@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, type CSSProperties } from "react";
 
 type FocusRect = { x: number; y: number; w: number; h: number };
 
@@ -11,6 +11,7 @@ type WallRevealAssetProps = {
   /** 0 = fully white, 1 = fully color */
   progress: number;
   className?: string;
+  style?: CSSProperties;
   /** Keep the 380px wall-scratch-item box. Floats pass false. */
   boxed?: boolean;
   /** Keep dark pixels (hero art). Default knocks out black bg from scratch objects. */
@@ -19,6 +20,8 @@ type WallRevealAssetProps = {
   scratchFocus?: FocusRect;
   /** Place the cover image in this box (0–1 of the container). */
   coverPlacement?: FocusRect;
+  /** KV #TeamGoogle: sharp SVG <img> under the canvas; canvas only draws the white scratch cover. */
+  sharpColorUnderlay?: boolean;
 };
 
 type Rect = { x: number; y: number; w: number; h: number };
@@ -48,10 +51,12 @@ export function WallRevealAsset({
   alt,
   progress,
   className = "",
+  style,
   knockOutBlack = true,
   boxed = true,
   scratchFocus,
   coverPlacement,
+  sharpColorUnderlay = false,
 }: WallRevealAssetProps) {
   const isHero = Boolean(coverPlacement);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -256,6 +261,8 @@ export function WallRevealAsset({
         colorLayerRef.current = layer;
       }
       ctx.drawImage(layer, coverDest.x, coverDest.y, coverDest.w, coverDest.h);
+    } else if (coverPlacement && !sharpColorUnderlay) {
+      drawMaskLayer(ctx, color, colorBox, colorDest);
     }
 
     if (appliedProgressRef.current < 0.999 || jobRef.current) {
@@ -317,7 +324,7 @@ export function WallRevealAsset({
       ctx.fill();
     }
     ctx.globalAlpha = 1;
-  }, [alt, scratchFocus, coverPlacement, knockOutBlack]);
+  }, [alt, scratchFocus, coverPlacement, knockOutBlack, sharpColorUnderlay]);
 
   useEffect(() => {
     const tick = (now: number) => {
@@ -504,15 +511,45 @@ export function WallRevealAsset({
   }, [colorSrc, whiteSrc, knockOutBlack, paint]);
 
   useEffect(() => {
+    targetProgressRef.current = Math.max(0, Math.min(1, progress));
+    const scratch = scratchRef.current;
+    const dest = destRef.current;
+    if (!imgsRef.current || !scratch || !dest || !seededRef.current) {
+      paint();
+      return;
+    }
+    const sctx = scratch.getContext("2d", { alpha: true });
+    if (!sctx) return;
+
+    const target = targetProgressRef.current;
+    let applied = appliedProgressRef.current;
+
+    if (target < applied - 0.001) {
+      sctx.globalCompositeOperation = "source-over";
+      sctx.fillStyle = "#fff";
+      sctx.fillRect(0, 0, scratch.width, scratch.height);
+      applied = 0;
+      appliedProgressRef.current = 0;
+      jobRef.current = null;
+      colorLayerRef.current = null;
+      if (target > 0.001) seedBand(sctx, dest, 0, target);
+      appliedProgressRef.current = target;
+    } else if (target > applied + 0.0005) {
+      jobRef.current = null;
+      seedBand(sctx, dest, applied, target);
+      appliedProgressRef.current = target;
+    }
     paint();
   }, [progress, paint]);
 
-  const useSceneImg = Boolean(coverPlacement) || !knockOutBlack;
+  const useSceneImg =
+    sharpColorUnderlay || (!coverPlacement && !knockOutBlack);
 
   return (
     <div
       ref={containerRef}
       className={`${boxed ? "wall-scratch-item " : ""}relative ${className}`.trim()}
+      style={style}
       aria-label={alt}
     >
       {useSceneImg ? (
@@ -520,7 +557,9 @@ export function WallRevealAsset({
           src={colorSrc}
           alt=""
           draggable={false}
-          className="pointer-events-none absolute inset-0 h-full w-full object-contain drop-shadow-lg"
+          className={`pointer-events-none absolute inset-0 h-full w-full object-contain${
+            sharpColorUnderlay ? " wall-kv-layer" : " drop-shadow-lg"
+          }`}
           aria-hidden
         />
       ) : null}

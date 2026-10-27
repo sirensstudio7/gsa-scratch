@@ -1,0 +1,33 @@
+{
+  "viewBox": [0, 0, 1024, 576],
+  "layers": [
+    {
+      "id": "judul",
+      "src": "/assets/wall-kv/judul-g-outline.png",
+      "alt": "Google Student Ambassador",
+      "box": [258, 72, 508, 320],
+      "fit": "meet"
+    },
+    {
+      "id": "buku",
+      "src": "/assets/wall-kv/buku-outline.png",
+      "alt": "",
+      "box": [0, 321, 432, 315],
+      "fit": "meet"
+    },
+    {
+      "id": "globe",
+      "src": "/assets/wall-kv/globe-outline.png",
+      "alt": "",
+      "box": [648, 272, 315, 304],
+      "fit": "meet"
+    },
+    {
+      "id": "teamgoogle",
+      "src": "/assets/wall-kv/google-4.svg",
+      "alt": "#Team Google",
+      "box": [420, 505, 184, 28],
+      "fit": "meet"
+    }
+  ]
+}
