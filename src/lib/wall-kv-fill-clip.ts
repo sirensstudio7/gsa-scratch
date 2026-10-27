@@ -1,6 +1,20 @@
 import type { WallKvScratchReveal } from "@/lib/wall-kv-layout";
 import type { CSSProperties } from "react";
 
+/**
+ * One shared wave for judul + books + globe: bottom-weighted art reads ~40% fuller
+ * than tap % at mid progress. Exponent > 1 lowers the wave so 5/10 taps ≈ half full.
+ */
+export const WALL_KV_UNIFIED_WAVE_TAP_EXPONENT = 1.65;
+
+/** Map staff tap ratio → unified wave height (still 0 at 0 taps, 1 at 100%). */
+export function wallKvUnifiedWaveFromTapProgress(tapProgress: number): number {
+  const p = Math.max(0, Math.min(1, tapProgress));
+  if (p <= 0) return 0;
+  if (p >= 1) return 1;
+  return Math.pow(p, WALL_KV_UNIFIED_WAVE_TAP_EXPONENT);
+}
+
 /** Shared bottom-up clip for the whole KV scene (one progress line). */
 export function wallKvProgressClip(progress: number): string {
   const p = Math.max(0, Math.min(1, progress));

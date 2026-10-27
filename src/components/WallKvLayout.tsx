@@ -18,6 +18,7 @@ import {
   wallKvMobileBukuSlotStyle,
   wallKvMobileGlobeSlotStyle,
 } from "@/lib/wall-kv-layout";
+import { wallKvUnifiedWaveFromTapProgress } from "@/lib/wall-kv-fill-clip";
 
 function useWallKvMobile() {
   const subscribe = useCallback((onStoreChange: () => void) => {
@@ -60,6 +61,7 @@ export function WallKvLayout({
 }: WallKvLayoutProps) {
   const isMobile = useWallKvMobile();
   const fillP = Math.max(0, Math.min(1, kvFillProgress));
+  const waveP = wallKvUnifiedWaveFromTapProgress(fillP);
   const teamP = teamGoogleProgress ?? fillP;
   const { layers } = getWallKvLayout();
   const scratchLayer = layers.find((l) => l.id === "teamgoogle");
@@ -129,7 +131,8 @@ export function WallKvLayout({
       ) : null}
       <div
         className="wall-kv-unified-fill"
-        data-kv-unified-fill={fillP.toFixed(4)}
+        data-kv-tap={fillP.toFixed(4)}
+        data-kv-wave={waveP.toFixed(4)}
         aria-hidden
       >
         {fillLayers.map((layer) => {
@@ -153,7 +156,7 @@ export function WallKvLayout({
           );
         })}
         <WallKvWaveClip
-          progress={fillP}
+          progress={waveP}
           className="wall-kv-unified-color-clip"
         >
           {fillLayers.map((layer) => {
