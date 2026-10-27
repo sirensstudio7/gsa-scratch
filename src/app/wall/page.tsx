@@ -134,11 +134,12 @@ export default function WallPage() {
   const soundEnabledRef = useRef(false);
   const audioUnlockedRef = useRef(false);
 
-  /** KV wave fill from welcome bubble taps (or timed staff fill). */
+  /** KV + #TeamGoogle fill from global bubble taps (staff target = tap count at 100%). */
   const revealProgress = useMemo(() => {
     if (forceComplete) return 1;
     const fromBubbles = bubbleWallProgress(bubbleClicks, target);
-    return Math.max(fromBubbles, autoFillProgress(autoFill));
+    if (autoFill) return Math.max(fromBubbles, autoFillProgress(autoFill));
+    return fromBubbles;
   }, [forceComplete, bubbleClicks, target, autoFill]);
 
   /** Latch at 100% — confetti + caption until staff Reset Event Data. */
