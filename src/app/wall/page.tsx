@@ -694,7 +694,7 @@ export default function WallPage() {
         }
       }, 2000);
 
-      if (data.mode !== "memory" && isSupabaseConfigured()) {
+      if (isSupabaseConfigured()) {
         try {
           const supabase = getSupabaseBrowser();
           channel = supabase
