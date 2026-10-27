@@ -10,7 +10,11 @@ import {
   type AutoFill,
   type FillMinutes,
 } from "@/lib/scratch-progress";
-import { bubbleWallProgress, publishBubbleTotal } from "@/lib/wall-bubble-fill";
+import {
+  BUBBLE_PROGRESS_CHANNEL,
+  bubbleWallProgress,
+  publishBubbleTotal,
+} from "@/lib/wall-bubble-fill";
 import { getBubblesPerStudent } from "@/lib/wall-student-session";
 
 const BUBBLES_PER_STUDENT = getBubblesPerStudent();
@@ -173,21 +177,19 @@ export default function StaffPage() {
       setAuthed(true);
 
     }
+    let nextBubbles = 0;
     if (bubblesRes.ok) {
       const bubbles = await bubblesRes.json();
-      const nextBubbles = Number(bubbles.total) || 0;
-      setBubbleClicks(nextBubbles);
-      if (lastBubbleClicksForSound.current === null) {
-        lastBubbleClicksForSound.current = nextBubbles;
-      } else if (nextBubbles > lastBubbleClicksForSound.current) {
-        playScratchSound();
-        lastBubbleClicksForSound.current = nextBubbles;
-      } else {
-        lastBubbleClicksForSound.current = nextBubbles;
-      }
+      nextBubbles = Math.max(0, Math.floor(Number(bubbles.total) || 0));
     }
     if (scratchRes.ok) {
       const scratch = await scratchRes.json();
+      if (typeof scratch.bubbleClicks === "number") {
+        nextBubbles = Math.max(
+          nextBubbles,
+          Math.max(0, Math.floor(scratch.bubbleClicks)),
+        );
+      }
       if (typeof scratch.target === "number") {
         setExpectedTotal(scratch.target);
         const draft = expectedDraftRef.current;
@@ -208,6 +210,15 @@ export default function StaffPage() {
         setAutoFill(null);
       }
     }
+    setBubbleClicks(nextBubbles);
+    if (lastBubbleClicksForSound.current === null) {
+      lastBubbleClicksForSound.current = nextBubbles;
+    } else if (nextBubbles > lastBubbleClicksForSound.current) {
+      playScratchSound();
+      lastBubbleClicksForSound.current = nextBubbles;
+    } else {
+      lastBubbleClicksForSound.current = nextBubbles;
+    }
   }, [playScratchSound]);
 
   useEffect(() => {
@@ -215,6 +226,33 @@ export default function StaffPage() {
     const t = setInterval(() => void refreshStats(), 4000);
     return () => clearInterval(t);
   }, [refreshStats]);
+
+  useEffect(() => {
+    if (!authed) return;
+    let channel: BroadcastChannel | null = null;
+    try {
+      channel = new BroadcastChannel(BUBBLE_PROGRESS_CHANNEL);
+      channel.onmessage = (ev) => {
+        const total = Number(ev.data?.total);
+        if (!Number.isFinite(total) || total < 0) return;
+        const n = Math.floor(total);
+        setBubbleClicks((prev) => {
+          if (n <= prev) return prev;
+          if (
+            lastBubbleClicksForSound.current !== null &&
+            n > lastBubbleClicksForSound.current
+          ) {
+            playScratchSound();
+          }
+          lastBubbleClicksForSound.current = n;
+          return n;
+        });
+      };
+    } catch {
+      /* ignore */
+    }
+    return () => channel?.close();
+  }, [authed, playScratchSound]);
 
   useEffect(() => {
     if (!autoFill) return;

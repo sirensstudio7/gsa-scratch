@@ -82,12 +82,24 @@ async function readSupabaseBubblePopsSince(
   }));
 }
 
+function normalizeRpcJson(data: unknown): unknown {
+  if (typeof data === "string") {
+    try {
+      return JSON.parse(data) as unknown;
+    } catch {
+      return data;
+    }
+  }
+  return data;
+}
+
 function parseRecordBubblePopRpc(data: unknown): {
   total: number;
   pop: BubblePopRecord | null;
 } | null {
-  if (!data || typeof data !== "object") return null;
-  const row = data as Record<string, unknown>;
+  const normalized = normalizeRpcJson(data);
+  if (!normalized || typeof normalized !== "object") return null;
+  const row = normalized as Record<string, unknown>;
   const total = Number(row.total);
   if (!Number.isFinite(total)) return null;
   let pop: BubblePopRecord | null = null;
@@ -142,7 +154,10 @@ export async function GET(request: Request) {
       return NextResponse.json({ total });
     } catch (err) {
       console.error("bubbles GET total", err);
-      return NextResponse.json({ total: getBubbleClickTotal() });
+      return NextResponse.json(
+        { error: "Failed to read bubble total" },
+        { status: 500 },
+      );
     }
   }
 
@@ -246,23 +261,23 @@ export async function POST(request: Request) {
       total = current + step;
       const ok = await writeSupabaseBubbleClicks(total);
       if (!ok) {
-        const mem = incrementBubbleClicks(step);
-        const pop = logPop ? appendBubblePop(logPop) : null;
-        return NextResponse.json({ total: mem, pop, mode: "memory-fallback" });
+        throw new Error("Could not persist bubble_clicks to scratch_settings");
       }
       setBubbleClickTotal(total);
     }
 
     let pop: BubblePopRecord | null = null;
     if (logPop) {
-      pop = (await insertSupabaseBubblePop(logPop)) ?? appendBubblePop(logPop);
+      pop = await insertSupabaseBubblePop(logPop);
+      if (!pop) {
+        pop = appendBubblePop(logPop);
+      }
     }
 
     return NextResponse.json({ total, pop });
   } catch (err) {
     console.error("bubbles POST", err);
-    const total = incrementBubbleClicks(step);
-    const pop = logPop ? appendBubblePop(logPop) : null;
-    return NextResponse.json({ total, pop, mode: "memory-fallback" });
+    const message = err instanceof Error ? err.message : "Bubble pop failed";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
