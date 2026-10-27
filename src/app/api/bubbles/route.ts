@@ -14,7 +14,19 @@ import {
   setBubbleClickTotal,
 } from "@/lib/bubble-clicks";
 import { isMemoryMode } from "@/lib/memory-store";
-import { getSupabaseAdmin } from "@/lib/supabase";
+import { getSupabaseAdmin, hasSupabaseServiceRole } from "@/lib/supabase";
+
+function apiError(err: unknown, fallback: string) {
+  const e = err as { message?: string; code?: string; details?: string };
+  return NextResponse.json(
+    {
+      error: e?.message || fallback,
+      code: e?.code,
+      details: e?.details,
+    },
+    { status: 500 },
+  );
+}
 
 async function readSupabaseBubbleClicks(): Promise<number | null> {
   const supabase = getSupabaseAdmin();
@@ -222,6 +234,7 @@ export async function POST(request: Request) {
 
   try {
     const supabase = getSupabaseAdmin();
+
     const { data: rpcData, error: rpcError } = await supabase.rpc(
       "record_bubble_pop",
       {
@@ -229,55 +242,71 @@ export async function POST(request: Request) {
         step,
       },
     );
-    const parsed = !rpcError ? parseRecordBubblePopRpc(rpcData) : null;
-    if (parsed) {
-      setBubbleClickTotal(parsed.total);
-      const pop =
-        parsed.pop ??
-        (logPop ? appendBubblePop(logPop) : null);
-      return NextResponse.json({ total: parsed.total, pop });
-    }
 
-    if (
-      rpcError &&
-      rpcError.code !== "PGRST202" &&
-      rpcError.code !== "42883"
-    ) {
-      throw rpcError;
-    }
-
-    const { data, error } = await supabase.rpc("increment_bubble_clicks", {
-      step,
-    });
-    let total: number;
-    if (!error && data !== null && data !== undefined) {
-      total = Math.max(0, Math.floor(Number(data)));
-      setBubbleClickTotal(total);
-    } else {
-      if (error && error.code !== "PGRST202" && error.code !== "42883") {
-        throw error;
+    if (!rpcError) {
+      const parsed = parseRecordBubblePopRpc(rpcData);
+      if (parsed) {
+        setBubbleClickTotal(parsed.total);
+        return NextResponse.json({
+          total: parsed.total,
+          pop: parsed.pop,
+        });
       }
-      const current = (await readSupabaseBubbleClicks()) ?? getBubbleClickTotal();
+      const fromDb = await readSupabaseBubbleClicks();
+      if (fromDb !== null) {
+        setBubbleClickTotal(fromDb);
+        return NextResponse.json({ total: fromDb, pop: null });
+      }
+    } else if (rpcError.code !== "PGRST202" && rpcError.code !== "42883") {
+      console.error("record_bubble_pop", rpcError);
+      return apiError(rpcError, "record_bubble_pop failed");
+    }
+
+    const { data: incData, error: incError } = await supabase.rpc(
+      "increment_bubble_clicks",
+      { step },
+    );
+
+    let total: number;
+    if (!incError && incData !== null && incData !== undefined) {
+      total = Math.max(0, Math.floor(Number(incData)));
+      setBubbleClickTotal(total);
+    } else if (
+      incError &&
+      incError.code !== "PGRST202" &&
+      incError.code !== "42883"
+    ) {
+      console.error("increment_bubble_clicks", incError);
+      return apiError(incError, "increment_bubble_clicks failed");
+    } else {
+      const current =
+        (await readSupabaseBubbleClicks()) ?? getBubbleClickTotal();
       total = current + step;
       const ok = await writeSupabaseBubbleClicks(total);
       if (!ok) {
-        throw new Error("Could not persist bubble_clicks to scratch_settings");
+        return NextResponse.json(
+          {
+            error:
+              "Could not update scratch_settings.bubble_clicks. Set SUPABASE_SERVICE_ROLE_KEY on Vercel or run supabase/migrations.",
+          },
+          { status: 500 },
+        );
       }
       setBubbleClickTotal(total);
     }
 
     let pop: BubblePopRecord | null = null;
-    if (logPop) {
-      pop = await insertSupabaseBubblePop(logPop);
-      if (!pop) {
-        pop = appendBubblePop(logPop);
+    if (logPop && hasSupabaseServiceRole()) {
+      try {
+        pop = await insertSupabaseBubblePop(logPop);
+      } catch (insertErr) {
+        console.error("bubble_pops insert", insertErr);
       }
     }
 
     return NextResponse.json({ total, pop });
   } catch (err) {
     console.error("bubbles POST", err);
-    const message = err instanceof Error ? err.message : "Bubble pop failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiError(err, "Bubble pop failed");
   }
 }
