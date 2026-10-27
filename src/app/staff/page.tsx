@@ -361,8 +361,16 @@ export default function StaffPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ confirm: true }),
     });
+    const data = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      detail?: string;
+    };
     if (!res.ok) {
-      setMessage("Reset gagal.");
+      setMessage(
+        data.error
+          ? `${data.error}${data.detail ? ` (${data.detail})` : ""}`
+          : "Reset gagal.",
+      );
       return;
     }
     setMessage("Event data di-reset.");

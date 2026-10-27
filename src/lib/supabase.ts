@@ -43,3 +43,8 @@ export function isSupabaseConfigured() {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   );
 }
+
+/** Staff writes (reset, submit, bubble RPC) need the service role — anon cannot delete rows. */
+export function hasSupabaseServiceRole() {
+  return Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY?.trim());
+}
