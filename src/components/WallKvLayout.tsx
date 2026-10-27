@@ -5,6 +5,7 @@ import { ONBOARDING_MOBILE_MQ } from "@/lib/onboarding-layout";
 import { WallHeroProgress } from "@/components/WallHeroProgress";
 import { WallKvTwinkleStars } from "@/components/WallKvTwinkleStars";
 import { WallKvBookGlobeFill } from "@/components/WallKvBookGlobeFill";
+import { WallKvWaveClip } from "@/components/WallKvWaveClip";
 import { WallKvCelebrationRewards } from "@/components/WallKvCelebrationRewards";
 import {
   getWallKvLayout,
@@ -151,26 +152,32 @@ export function WallKvLayout({
             </div>
           );
         })}
-        {fillLayers.map((layer) => {
-          const reveal = WALL_KV_SCRATCH_REVEAL[layer.id];
-          if (!reveal) return null;
-          return (
-            <div
-              key={`${layer.id}-color`}
-              className={`wall-kv-slot wall-kv-book-globe-slot wall-kv-unified-fill-color${bookGlobeSlotClass(layer.id)}`}
-              style={fillSlotStyle(layer)}
-            >
-              <WallKvBookGlobeFill
-                colorSrc={wallKvAssetSrc(reveal.colorSrc)}
-                outlineSrc={wallKvAssetSrc(reveal.whiteSrc)}
-                alt=""
-                align={reveal.align}
-                progress={fillP}
-                part="color"
-              />
-            </div>
-          );
-        })}
+        <WallKvWaveClip
+          progress={fillP}
+          className="wall-kv-unified-color-clip"
+        >
+          {fillLayers.map((layer) => {
+            const reveal = WALL_KV_SCRATCH_REVEAL[layer.id];
+            if (!reveal) return null;
+            return (
+              <div
+                key={`${layer.id}-color`}
+                className={`wall-kv-slot wall-kv-book-globe-slot wall-kv-unified-fill-color${bookGlobeSlotClass(layer.id)}`}
+                style={fillSlotStyle(layer)}
+              >
+                <WallKvBookGlobeFill
+                  colorSrc={wallKvAssetSrc(reveal.colorSrc)}
+                  outlineSrc={wallKvAssetSrc(reveal.whiteSrc)}
+                  alt=""
+                  align={reveal.align}
+                  progress={fillP}
+                  part="color"
+                  unifiedColorClip
+                />
+              </div>
+            );
+          })}
+        </WallKvWaveClip>
       </div>
       <WallKvTwinkleStars />
       <WallKvCelebrationRewards visible={showCelebrationRewards} />
