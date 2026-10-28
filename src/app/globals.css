@@ -362,7 +362,7 @@ input {
     brightness(1.12) contrast(1.08);
 }
 
-/* Rise to a per-bubble height (70–80vh), then burst in place */
+/* Rise to a per-bubble height (30–70vh), then burst in place */
 @keyframes wall-meet-balloon-travel {
   0% {
     transform: translateX(0) translateY(52px);

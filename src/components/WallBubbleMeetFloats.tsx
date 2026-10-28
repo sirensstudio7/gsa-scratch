@@ -30,7 +30,7 @@ type Floater = {
   driftPx: number;
   durationS: number;
   wobbleS: number;
-  /** Viewport heights to rise before pop (70–80%, seeded per pop). */
+  /** How far up the bubble rises before pop (vh, 30–70, seeded per pop). */
   popHeightVh: number;
   side: "left" | "right";
 };
@@ -50,8 +50,11 @@ function floaterFromPop(pop: BubblePopRecord): Floater {
   const laneSpread = (n % 140) / 10;
   const xPct = side === "left" ? 5 + laneSpread : 88 - laneSpread;
   const driftPx = ((n % 31) - 15) * 1.2;
-  const popHeightVh = 70 + (n % 11);
-  const durationS = 1.85 + (popHeightVh - 70) * 0.055 + (n % 7) * 0.05;
+  const heightRoll = ((n * 1103515245 + 12345) >>> 0) % 10_000;
+  const popHeightVh =
+    Math.round((30 + (heightRoll / 10_000) * 40) * 10) / 10;
+  const durationS =
+    Math.round((0.032 * popHeightVh + 0.55 + (n % 7) * 0.05) * 100) / 100;
   const wobbleS = 1.35 + (n % 7) * 0.09;
   return {
     key: `float-${pop.id}`,
