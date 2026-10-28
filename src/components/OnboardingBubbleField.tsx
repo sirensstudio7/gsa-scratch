@@ -10,7 +10,7 @@ import {
   useSyncExternalStore,
   type CSSProperties,
 } from "react";
-import { BubblePopEffect } from "@/components/BubblePopEffect";
+import { OnboardingBubblePopVisual } from "@/components/OnboardingBubblePopVisual";
 import {
   BubblePhysicsBurst,
   type BubblePhysicsBurstHandle,
@@ -26,7 +26,11 @@ import {
   unlockBubblePopSounds,
   warmBubblePopSounds,
 } from "@/lib/bubble-pop-sound";
-import { ONBOARDING_POP_STYLE } from "@/lib/onboarding-pop-style";
+import {
+  ONBOARDING_BUBBLE_POP_MS,
+  ONBOARDING_POP_STYLE,
+  onboardingBubbleFilmPopClass,
+} from "@/lib/onboarding-pop-style";
 import { fitMobileBubbleLayout } from "@/lib/onboarding-mobile-responsive";
 import { publishBubbleTotal } from "@/lib/wall-bubble-fill";
 
@@ -39,12 +43,6 @@ type Props = {
 };
 
 const DEFAULT_RESTART_MS = 220;
-
-function filmPopClass() {
-  if (ONBOARDING_POP_STYLE === "physics") return " onboarding-icon-img--film-snap";
-  if (ONBOARDING_POP_STYLE === "real") return " onboarding-icon-img--film-pop-real";
-  return " onboarding-icon-img--film-pop";
-}
 
 const ONBOARDING_ART_VERSION = "11";
 
@@ -64,13 +62,6 @@ function useOnboardingLayout(): OnboardingLayoutFile {
   );
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
-const POP_MS =
-  ONBOARDING_POP_STYLE === "physics"
-    ? 160
-    : ONBOARDING_POP_STYLE === "real"
-      ? 420
-      : 320;
-
 export function OnboardingBubbleField({
   onAllPopped,
   autoRestart = true,
@@ -215,7 +206,7 @@ export function OnboardingBubbleField({
       poppingRef.current = stillPopping;
       setPopped(new Set(poppedRef.current));
       setPopping(stillPopping);
-    }, POP_MS);
+    }, ONBOARDING_BUBBLE_POP_MS);
   }, []);
 
   const sorted = useMemo(
@@ -284,36 +275,13 @@ export function OnboardingBubbleField({
             <span
               className={`onboarding-icon-motion onboarding-icon-motion--v${motionVariant}${isPopping ? " onboarding-icon-motion--paused" : ""}`}
             >
-            {isPopping && ONBOARDING_POP_STYLE === "physics" ? (
-              <span className="onboarding-soap-burst" aria-hidden>
-                <span className="onboarding-soap-globe" />
-                <span className="onboarding-soap-highlight" />
-                <span className="onboarding-soap-ring" />
-                <span className="onboarding-soap-ring onboarding-soap-ring--late" />
-                {Array.from({ length: 8 }, (_, i) => (
-                  <span
-                    key={i}
-                    className="onboarding-soap-shard"
-                    style={{ "--shard": i } as CSSProperties}
-                  />
-                ))}
-              </span>
-            ) : null}
-            {isPopping && ONBOARDING_POP_STYLE === "real" ? (
-              <BubblePopEffect />
-            ) : null}
-            {isPopping && ONBOARDING_POP_STYLE === "classic" ? (
-              <span className="onboarding-bubble-pop onboarding-bubble-pop--classic" aria-hidden>
-                <span className="onboarding-bubble-membrane onboarding-bubble-membrane--classic" />
-                <span className="onboarding-bubble-mist onboarding-bubble-mist--classic" />
-              </span>
-            ) : null}
+            {isPopping ? <OnboardingBubblePopVisual /> : null}
             {showBubble ? (
               /* eslint-disable-next-line @next/next/no-img-element */
               <img
                 src={bubbleSrc}
                 alt=""
-                className={`onboarding-icon-img${isPopping ? filmPopClass() : ""}`}
+                className={`onboarding-icon-img${isPopping ? onboardingBubbleFilmPopClass() : ""}`}
                 draggable={false}
                 decoding="async"
               />

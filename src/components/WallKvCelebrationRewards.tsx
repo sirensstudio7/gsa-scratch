@@ -41,6 +41,11 @@ const ENTRANCE_DELAY: Record<keyof typeof WALL_KV_CELEBRATION_ASSETS, string> =
     trophy: "0.22s",
   };
 
+/** Phone portrait — keep scene uncluttered; red books + globe stay in KV fill. */
+const MOBILE_HIDDEN_REWARDS: ReadonlySet<
+  keyof typeof WALL_KV_CELEBRATION_ASSETS
+> = new Set(["bookOpen", "laptop", "trophy"]);
+
 function frameLocalStyle(
   relBox: [number, number, number, number],
   offsetPx?: { x?: number; y?: number },
@@ -73,6 +78,7 @@ export function WallKvCelebrationRewards({
       {(Object.keys(WALL_KV_CELEBRATION_ASSETS) as Array<
         keyof typeof WALL_KV_CELEBRATION_ASSETS
       >).map((key) => {
+        if (isMobile && MOBILE_HIDDEN_REWARDS.has(key)) return null;
         const placement = WALL_KV_CELEBRATION_PLACEMENT[key];
         const src = wallKvAssetSrc(WALL_KV_CELEBRATION_ASSETS[key]);
 

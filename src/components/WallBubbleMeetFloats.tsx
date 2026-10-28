@@ -7,12 +7,16 @@ import {
   useImperativeHandle,
   useRef,
   useState,
-  type CSSProperties,
 } from "react";
 import type { BubblePopRecord } from "@/lib/bubble-pop-log";
 import { resolveBubblePopIconId } from "@/lib/bubble-pop-log";
+import {
+  BubblePhysicsBurst,
+  type BubblePhysicsBurstHandle,
+} from "@/components/BubblePhysicsBurst";
+import { ONBOARDING_POP_STYLE } from "@/lib/onboarding-pop-style";
+import { WallMeetFloater } from "@/components/WallMeetFloater";
 
-const SPRITE_VERSION = "11";
 const MAX_FLOATERS = 28;
 /** Space out floats when the wall catches up several pops in one sync (not same tap). */
 const FLOAT_STAGGER_MS = 240;
@@ -26,6 +30,8 @@ type Floater = {
   driftPx: number;
   durationS: number;
   wobbleS: number;
+  /** Viewport heights to rise before pop (70–80%, seeded per pop). */
+  popHeightVh: number;
   side: "left" | "right";
 };
 
@@ -36,11 +42,6 @@ export type WallBubbleMeetFloatsHandle = {
   prime: (pops: BubblePopRecord[]) => void;
 };
 
-function unwrapSrc(iconId: string) {
-  const id = resolveBubblePopIconId(iconId);
-  return `/assets/onboarding/sprites/${id}-unwrap.png?v=${SPRITE_VERSION}`;
-}
-
 function floaterFromPop(pop: BubblePopRecord): Floater {
   const iconId = resolveBubblePopIconId(pop.iconId);
   let n = (pop.id * 92821) ^ iconId.length;
@@ -49,7 +50,8 @@ function floaterFromPop(pop: BubblePopRecord): Floater {
   const laneSpread = (n % 140) / 10;
   const xPct = side === "left" ? 5 + laneSpread : 88 - laneSpread;
   const driftPx = ((n % 31) - 15) * 1.2;
-  const durationS = 4.4 + (n % 9) * 0.14;
+  const popHeightVh = 70 + (n % 11);
+  const durationS = 1.85 + (popHeightVh - 70) * 0.055 + (n % 7) * 0.05;
   const wobbleS = 1.35 + (n % 7) * 0.09;
   return {
     key: `float-${pop.id}`,
@@ -58,6 +60,7 @@ function floaterFromPop(pop: BubblePopRecord): Floater {
     driftPx,
     durationS,
     wobbleS,
+    popHeightVh,
     side,
   };
 }
@@ -67,26 +70,6 @@ type WallBubbleMeetFloatsProps = {
   /** After wall hydrate — poll fallback for pops without spawn(). */
   live: boolean;
 };
-
-function FloatIcon({ iconId }: { iconId: string }) {
-  const fallback = resolveBubblePopIconId(null);
-  const [src, setSrc] = useState(() => unwrapSrc(iconId));
-
-  return (
-    /* eslint-disable-next-line @next/next/no-img-element */
-    <img
-      src={src}
-      alt=""
-      className="wall-meet-balloon-img"
-      draggable={false}
-      decoding="async"
-      onError={() => {
-        const fix = unwrapSrc(fallback);
-        if (src !== fix) setSrc(fix);
-      }}
-    />
-  );
-}
 
 /** Meet-style balloons on left/right — rise, drift, fade (not stacked rails). */
 export const WallBubbleMeetFloats = forwardRef<
@@ -99,6 +82,8 @@ export const WallBubbleMeetFloats = forwardRef<
   const queueRef = useRef<BubblePopRecord[]>([]);
   const drainScheduled = useRef(false);
   const staggerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const layerRef = useRef<HTMLDivElement>(null);
+  const burstRef = useRef<BubblePhysicsBurstHandle>(null);
 
   const revealPop = useCallback((pop: BubblePopRecord) => {
     const floater = floaterFromPop(pop);
@@ -171,43 +156,25 @@ export const WallBubbleMeetFloats = forwardRef<
     };
   }, []);
 
-  const removeFloater = (key: string) => {
+  const removeFloater = useCallback((key: string) => {
     setFloaters((prev) => prev.filter((f) => f.key !== key));
-  };
+  }, []);
+
+  const layerEl = useCallback(() => layerRef.current, []);
 
   return (
-    <div className="wall-meet-float-layer" aria-hidden>
+    <div ref={layerRef} className="wall-meet-float-layer" aria-hidden>
+      {ONBOARDING_POP_STYLE === "physics" ? (
+        <BubblePhysicsBurst ref={burstRef} />
+      ) : null}
       {floaters.map((f) => (
-        <div
+        <WallMeetFloater
           key={f.key}
-          className={`wall-meet-balloon wall-meet-balloon--${f.side}`}
-          style={
-            {
-              left: `${f.xPct}%`,
-              ["--balloon-drift" as string]: `${f.driftPx}px`,
-              ["--balloon-dur" as string]: `${f.durationS}s`,
-              ["--balloon-wobble-dur" as string]: `${f.wobbleS}s`,
-            } as CSSProperties
-          }
-          onAnimationEnd={(e) => {
-            if (
-              e.animationName !== "wall-meet-balloon-travel" &&
-              e.animationName !== "wall-meet-balloon-travel-right"
-            ) {
-              return;
-            }
-            removeFloater(f.key);
-          }}
-        >
-          <span className="wall-meet-balloon-body">
-            <span className="wall-meet-balloon-wobble">
-              <span className="wall-meet-balloon-bubble">
-                <span className="wall-meet-balloon-bubble-spec" aria-hidden />
-                <FloatIcon iconId={f.iconId} />
-              </span>
-            </span>
-          </span>
-        </div>
+          floater={f}
+          layerEl={layerEl}
+          burstRef={burstRef}
+          onDone={removeFloater}
+        />
       ))}
     </div>
   );

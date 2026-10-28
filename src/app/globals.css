@@ -310,6 +310,33 @@ input {
   overflow: hidden;
 }
 
+.wall-meet-balloon-pop-host {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  width: 100%;
+}
+
+.wall-meet-balloon-pop-host .onboarding-soap-burst {
+  inset: 0;
+}
+
+.wall-meet-balloon-pop-bubble {
+  position: relative;
+  z-index: 3;
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+.wall-meet-balloon-wobble--paused {
+  animation: none !important;
+  transform: translateX(0) rotate(0deg);
+}
+
 .wall-meet-balloon-bubble-spec {
   position: absolute;
   left: 28%;
@@ -335,14 +362,14 @@ input {
     brightness(1.12) contrast(1.08);
 }
 
-/* Constant upward speed — no ease-out “stop” at the top */
+/* Rise to a per-bubble height (70–80vh), then burst in place */
 @keyframes wall-meet-balloon-travel {
   0% {
     transform: translateX(0) translateY(52px);
   }
   100% {
     transform: translateX(var(--balloon-drift, 0px))
-      translateY(calc(-100vh - 4rem));
+      translateY(calc(-1 * var(--balloon-pop-vh, 75) * 1vh + 52px));
   }
 }
 
@@ -356,7 +383,7 @@ input {
   }
   100% {
     transform: translateX(calc(-100% + var(--balloon-drift, 0px)))
-      translateY(calc(-100vh - 4rem));
+      translateY(calc(-1 * var(--balloon-pop-vh, 75) * 1vh + 52px));
   }
 }
 
@@ -367,11 +394,8 @@ input {
   7% {
     opacity: 1;
   }
-  58% {
-    opacity: 1;
-  }
   100% {
-    opacity: 0;
+    opacity: 1;
   }
 }
 
@@ -386,7 +410,7 @@ input {
     transform: scale(1);
   }
   100% {
-    transform: scale(0.92);
+    transform: scale(1);
   }
 }
 
@@ -979,18 +1003,23 @@ input {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.12em;
+  gap: 0.04em;
   margin: 0;
   padding: 0 0.75rem;
   box-sizing: border-box;
   width: max-content;
-  max-width: min(98%, 42rem);
+  max-width: min(98%, 56rem);
   pointer-events: none;
   text-align: center;
-  font-family: "Product Sans", "Google Sans", system-ui, sans-serif;
-  font-size: clamp(1.45rem, 5.2vw, 3.35rem);
+  font-family: "Google Sans Flex", "Google Sans", system-ui, sans-serif;
+  font-optical-sizing: none;
+  font-size: clamp(2rem, 7.5vw, 4.75rem);
   font-weight: 700;
-  line-height: 1.14;
+  font-variation-settings:
+    "opsz" 144,
+    "wdth" 47,
+    "wght" 700;
+  line-height: 1.02;
   letter-spacing: 0.02em;
   color: #fff;
   text-shadow:
@@ -1193,9 +1222,9 @@ input {
     width: 96vw;
     max-width: 96vw;
     padding: 0 0.2rem;
-    font-size: clamp(1.28rem, 5.7vw, 1.85rem);
-    line-height: 1.16;
-    gap: 0.08em;
+    font-size: clamp(1.55rem, 7vw, 2.35rem);
+    line-height: 1.04;
+    gap: 0.03em;
   }
 
   .wall-kv-graduation-caption-line {

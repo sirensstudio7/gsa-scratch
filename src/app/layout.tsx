@@ -39,6 +39,10 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&display=swap"
           rel="stylesheet"
         />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wdth,wght@6..144,25..151,400..700&display=swap"
+          rel="stylesheet"
+        />
       </head>
       <body className={`${nunito.variable} antialiased`}>{children}</body>
     </html>
